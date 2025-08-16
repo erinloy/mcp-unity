@@ -1,3 +1,7 @@
+This is a personal fork of https://github.com/CoderGamester/mcp-unity
+
+
+
 # MCP Unity Editor (Game Engine)
 
 [![](https://badge.mcpx.dev?status=on 'MCP Enabled')](https://modelcontextprotocol.io/introduction)
