@@ -78,27 +78,63 @@ namespace McpUnity.Utils
                 return CleanPathPrefix(serverPath);
             }
             
-            var assets = AssetDatabase.FindAssets("tsconfig");
-
-            if(assets.Length == 1)
+            // Check if installed directly in Assets folder
+            // Look for the McpUnity.Editor assembly to find the installation location
+            var mcpEditorAssets = AssetDatabase.FindAssets("McpUnity.Editor t:AssemblyDefinitionAsset");
+            
+            if (mcpEditorAssets.Length > 0)
             {
-                // Convert relative path to absolute path
-                var relativePath = AssetDatabase.GUIDToAssetPath(assets[0]);
-                string fullPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", relativePath));
-
-                return CleanPathPrefix(fullPath);
-            }
-            if (assets.Length > 0)
-            {
-                foreach (var assetJson in assets)
+                // Get the path to the McpUnity.Editor.asmdef file
+                string asmdefPath = AssetDatabase.GUIDToAssetPath(mcpEditorAssets[0]);
+                
+                // Navigate from Editor/McpUnity.Editor.asmdef to Server~ directory
+                string fullAsmdefPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", asmdefPath));
+                string mcpUnityRoot = Path.GetDirectoryName(Path.GetDirectoryName(fullAsmdefPath)); // Go up from Editor to mcp-unity root
+                string serverPath = Path.Combine(mcpUnityRoot, "Server~");
+                
+                // Verify the Server~ directory exists
+                if (Directory.Exists(serverPath))
                 {
-                    string relativePath = AssetDatabase.GUIDToAssetPath(assetJson);
+                    return CleanPathPrefix(serverPath);
+                }
+            }
+            
+            // Fallback: Try to find by looking for README.md files that might be in mcp-unity root
+            var readmeAssets = AssetDatabase.FindAssets("README t:TextAsset");
+            
+            foreach (var asset in readmeAssets)
+            {
+                string relativePath = AssetDatabase.GUIDToAssetPath(asset);
+                
+                // Check if this is the mcp-unity README
+                if (relativePath.Contains("mcp-unity") && Path.GetFileName(relativePath) == "README.md")
+                {
                     string fullPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", relativePath));
-
-                    if(Path.GetFileName(Path.GetDirectoryName(fullPath)) == "Server~")
+                    string mcpUnityRoot = Path.GetDirectoryName(fullPath);
+                    string serverPath = Path.Combine(mcpUnityRoot, "Server~");
+                    
+                    // Verify the Server~ directory exists
+                    if (Directory.Exists(serverPath))
                     {
-                        return CleanPathPrefix(Path.GetDirectoryName(fullPath));
+                        return CleanPathPrefix(serverPath);
                     }
+                }
+            }
+            
+            // Last resort: Check common locations relative to Assets
+            string assetsPath = Application.dataPath;
+            string[] possiblePaths = new[]
+            {
+                Path.Combine(assetsPath, "mcp-unity", "Server~"),
+                Path.Combine(assetsPath, "MCP Unity", "Server~"),
+                Path.Combine(assetsPath, "McpUnity", "Server~")
+            };
+            
+            foreach (var path in possiblePaths)
+            {
+                if (Directory.Exists(path))
+                {
+                    return CleanPathPrefix(path);
                 }
             }
             

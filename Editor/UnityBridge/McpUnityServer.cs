@@ -131,6 +131,9 @@ namespace McpUnity.Unity
                 _webSocketServer.AddWebSocketService("/McpUnity", () => new McpUnitySocketHandler(this));
                 _webSocketServer.Start();
                 McpLogger.LogInfo($"WebSocket server started successfully on {host}:{McpUnitySettings.Instance.Port}.");
+                
+                // Register with service discovery
+                ServiceDiscovery.RegisterService(McpUnitySettings.Instance.Port);
             }
             catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse)
             {
@@ -253,6 +256,10 @@ namespace McpUnity.Unity
             // Register CreatePrefabTool
             CreatePrefabTool createPrefabTool = new CreatePrefabTool();
             _tools.Add(createPrefabTool.Name, createPrefabTool);
+            
+            // Register CaptureScreenshotTool
+            CaptureScreenshotTool captureScreenshotTool = new CaptureScreenshotTool();
+            _tools.Add(captureScreenshotTool.Name, captureScreenshotTool);
         }
         
         /// <summary>
@@ -308,6 +315,10 @@ namespace McpUnity.Unity
         {
             McpLogger.LogInfo("Editor is quitting. Ensuring server is stopped.");
             Instance.Dispose();
+            // Release the port allocation for this Unity instance
+            PortManager.ReleasePort();
+            // Unregister from service discovery
+            ServiceDiscovery.UnregisterService();
         }
 
         /// <summary>

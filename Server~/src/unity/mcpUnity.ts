@@ -6,7 +6,8 @@ import { promises as fs } from 'fs';
 import path from 'path';
 
 // Top-level constant for the Unity settings JSON path
-const MCP_UNITY_SETTINGS_PATH = path.resolve(process.cwd(), '../ProjectSettings/McpUnitySettings.json');
+// Navigate from Server~ to project root: Server~ -> mcp-unity -> Assets -> Unity project root
+const MCP_UNITY_SETTINGS_PATH = path.resolve(process.cwd(), '../../../ProjectSettings/McpUnitySettings.json');
 
 interface PendingRequest {
   resolve: (value: any) => void;

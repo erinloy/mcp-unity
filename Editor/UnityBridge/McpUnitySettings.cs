@@ -22,8 +22,8 @@ namespace McpUnity.Unity
         
         private static McpUnitySettings _instance;
 
-        [Tooltip("Port number for MCP server")]
-        public int Port = 8090;
+        [Tooltip("Port number for MCP server (0 = auto-allocate)")]
+        public int Port = 0; // Changed to 0 for auto-allocation
         
         [Tooltip("Timeout in seconds for tool request")]
         public int RequestTimeoutSeconds = RequestTimeoutMinimum;
@@ -79,6 +79,13 @@ namespace McpUnity.Unity
                 else
                 {
                     // Create default settings file on the first time initialization
+                    SaveSettings();
+                }
+                
+                // Auto-allocate port if not set
+                if (Port == 0)
+                {
+                    Port = PortManager.GetOrAllocatePort();
                     SaveSettings();
                 }
             }
