@@ -1,6 +1,7 @@
 using System;
 using System.Text;
 using System.Threading.Tasks;
+using System.Linq;
 using UnityEngine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -8,6 +9,7 @@ using WebSocketSharp;
 using WebSocketSharp.Server;
 using McpUnity.Tools;
 using McpUnity.Resources;
+using McpUnity.Discovery;
 using Unity.EditorCoroutines.Editor;
 using System.Collections;
 using System.Collections.Specialized;
@@ -78,6 +80,35 @@ namespace McpUnity.Unity
                 if (string.IsNullOrEmpty(method))
                 {
                     tcs.SetResult(CreateErrorResponse("Missing method in request", "invalid_request"));
+                }
+                // Handle discovery methods
+                else if (method == "rpc.discover")
+                {
+                    var openRpcDoc = OpenRpcDiscovery.GenerateOpenRpcDocument(
+                        _server.GetTools(), 
+                        _server.GetResources()
+                    );
+                    tcs.SetResult(openRpcDoc);
+                }
+                else if (method == "system.listMethods")
+                {
+                    var methods = new List<string> { "rpc.discover", "system.listMethods", "system.methodSignature" };
+                    methods.AddRange(_server.GetTools().Keys);
+                    methods.AddRange(_server.GetResources().Keys);
+                    tcs.SetResult(JObject.FromObject(methods));
+                }
+                else if (method == "system.methodSignature")
+                {
+                    var methodName = parameters["methodName"]?.ToString();
+                    if (string.IsNullOrEmpty(methodName))
+                    {
+                        tcs.SetResult(CreateErrorResponse("Missing methodName parameter", "invalid_params"));
+                    }
+                    else
+                    {
+                        var signature = GetMethodSignature(methodName);
+                        tcs.SetResult(signature ?? CreateErrorResponse($"Method {methodName} not found", "method_not_found"));
+                    }
                 }
                 else if (_server.TryGetTool(method, out var tool))
                 {
@@ -217,6 +248,7 @@ namespace McpUnity.Unity
             // Format as JSON-RPC 2.0 response
             JObject jsonRpcResponse = new JObject
             {
+                ["jsonrpc"] = "2.0",  // Add proper JSON-RPC version
                 ["id"] = requestId
             };
             
@@ -231,6 +263,99 @@ namespace McpUnity.Unity
             }
             
             return jsonRpcResponse;
+        }
+        
+        /// <summary>
+        /// Get method signature for discovery
+        /// </summary>
+        private JObject GetMethodSignature(string methodName)
+        {
+            // Check if it's a tool
+            if (_server.TryGetTool(methodName, out var tool))
+            {
+                return new JObject
+                {
+                    ["name"] = tool.Name,
+                    ["description"] = tool.Description,
+                    ["params"] = new JObject
+                    {
+                        ["type"] = "object",
+                        ["additionalProperties"] = true
+                    },
+                    ["returns"] = new JObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JObject
+                        {
+                            ["success"] = new JObject { ["type"] = "boolean" },
+                            ["type"] = new JObject { ["type"] = "string" },
+                            ["data"] = new JObject { ["type"] = "object" },
+                            ["message"] = new JObject { ["type"] = "string" }
+                        }
+                    }
+                };
+            }
+            
+            // Check if it's a resource
+            if (_server.TryGetResource(methodName, out var resource))
+            {
+                return new JObject
+                {
+                    ["name"] = resource.Name,
+                    ["description"] = resource.Description,
+                    ["params"] = new JObject
+                    {
+                        ["type"] = "object"
+                    },
+                    ["returns"] = new JObject
+                    {
+                        ["type"] = "object"
+                    }
+                };
+            }
+            
+            // Check if it's a discovery method
+            switch (methodName)
+            {
+                case "rpc.discover":
+                    return new JObject
+                    {
+                        ["name"] = "rpc.discover",
+                        ["description"] = "OpenRPC discovery endpoint",
+                        ["params"] = new JArray(),
+                        ["returns"] = new JObject { ["type"] = "object" }
+                    };
+                case "system.listMethods":
+                    return new JObject
+                    {
+                        ["name"] = "system.listMethods",
+                        ["description"] = "List available methods",
+                        ["params"] = new JArray(),
+                        ["returns"] = new JObject 
+                        { 
+                            ["type"] = "array",
+                            ["items"] = new JObject { ["type"] = "string" }
+                        }
+                    };
+                case "system.methodSignature":
+                    return new JObject
+                    {
+                        ["name"] = "system.methodSignature",
+                        ["description"] = "Get method signature",
+                        ["params"] = new JArray
+                        {
+                            new JObject
+                            {
+                                ["name"] = "methodName",
+                                ["type"] = "string",
+                                ["required"] = true
+                            }
+                        },
+                        ["returns"] = new JObject { ["type"] = "object" }
+                    };
+            }
+            
+            return null;
         }
     }
 }

@@ -188,6 +188,22 @@ namespace McpUnity.Unity
         {
             return _resources.TryGetValue(name, out resource);
         }
+        
+        /// <summary>
+        /// Get all registered tools for discovery
+        /// </summary>
+        public Dictionary<string, McpToolBase> GetTools()
+        {
+            return new Dictionary<string, McpToolBase>(_tools);
+        }
+        
+        /// <summary>
+        /// Get all registered resources for discovery
+        /// </summary>
+        public Dictionary<string, McpResourceBase> GetResources()
+        {
+            return new Dictionary<string, McpResourceBase>(_resources);
+        }
 
         /// <summary>
         /// Installs the MCP Node.js server by running 'npm install' and 'npm run build'
