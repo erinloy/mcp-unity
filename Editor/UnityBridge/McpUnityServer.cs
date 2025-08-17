@@ -190,8 +190,8 @@ namespace McpUnity.Unity
         }
 
         /// <summary>
-        /// Installs the MCP Node.js server by running 'npm install' and 'npm run build'
-        /// in the server directory if 'node_modules' or 'build' folders are missing.
+        /// Verifies the MCP C# server is installed and ready to use.
+        /// The C# implementation is pre-built and doesn't require npm.
         /// </summary>
         public void InstallServer()
         {
@@ -199,20 +199,27 @@ namespace McpUnity.Unity
 
             if (string.IsNullOrEmpty(serverPath) || !Directory.Exists(serverPath))
             {
-                McpLogger.LogError($"Server path not found or invalid: {serverPath}. Make sure that MCP Node.js server is installed.");
+                McpLogger.LogError($"Server path not found or invalid: {serverPath}. Make sure that MCP server is installed.");
                 return;
             }
 
-            string nodeModulesPath = Path.Combine(serverPath, "node_modules");
-            if (!Directory.Exists(nodeModulesPath))
+            // Check for C# executable instead of node_modules
+            string exePath = Path.Combine(serverPath, "build", "unity-mcp.exe");
+            if (!File.Exists(exePath))
             {
-                McpUtils.RunNpmCommand("install", serverPath);
+                McpLogger.LogWarning($"MCP C# server executable not found at: {exePath}");
+                
+                // The C# executable should be pre-built in the submodule
+                // If missing, it needs to be built with dotnet publish
+                string csprojPath = Path.Combine(serverPath, "UnityMcp.csproj");
+                if (File.Exists(csprojPath))
+                {
+                    McpLogger.LogInfo("C# project found. Please build with: dotnet publish -c Release -o build");
+                }
             }
-
-            string buildPath = Path.Combine(serverPath, "build");
-            if (!Directory.Exists(buildPath))
+            else
             {
-                McpUtils.RunNpmCommand("run build", serverPath);
+                McpLogger.LogInfo($"MCP C# server ready at: {exePath}");
             }
         }
         
