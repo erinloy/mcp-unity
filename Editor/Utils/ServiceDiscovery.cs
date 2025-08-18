@@ -206,12 +206,8 @@ namespace McpUnity.Utils
             {
                 configs[service.mcpInstanceId] = new
                 {
-                    command = "node",
-                    args = new[]
-                    {
-                        // This would need to be adjusted based on where the MCP server is installed
-                        $"{service.projectPath}/../Assets/mcp-unity/Server~/build/index.js"
-                    },
+                    command = $"{service.projectPath}/../Assets/mcp-unity/Server~/bin/Release/net8.0/win-x64/unity-mcp.exe",
+                    args = new string[] { },  // No args needed for C# exe
                     env = new Dictionary<string, string>
                     {
                         ["UNITY_PORT"] = service.port.ToString(),

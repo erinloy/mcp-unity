@@ -309,11 +309,11 @@ If you want to build it manually, you can follow these steps:
 Debug the server with [@modelcontextprotocol/inspector](https://github.com/modelcontextprotocol/inspector):
    - Powershell
    ```powershell
-   npx @modelcontextprotocol/inspector node Server~/build/index.js
+   npx @modelcontextprotocol/inspector Server~/bin/Release/net8.0/win-x64/unity-mcp.exe
    ```
    - Command Prompt/Terminal
    ```cmd
-   npx @modelcontextprotocol/inspector node Server~/build/index.js
+   npx @modelcontextprotocol/inspector Server~/bin/Release/net8.0/win-x64/unity-mcp.exe
    ```
 
 Don't forget to shutdown the server with `Ctrl + C` before closing the terminal or debugging it with the [MCP Inspector](https://github.com/modelcontextprotocol/inspector).

@@ -28,8 +28,8 @@ namespace McpUnity.Utils
                     {
                         { "mcp-unity", new Dictionary<string, object>
                             {
-                                { "command", "node" },
-                                { "args", new[] { Path.Combine(GetServerPath(), "build", "index.js") } }
+                                { "command", Path.Combine(GetServerPath(), "bin", "Release", "net8.0", "win-x64", "unity-mcp.exe") },
+                                { "args", new string[] { } }  // No args needed for C# exe
                             }
                         }
                     }
