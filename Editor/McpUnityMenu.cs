@@ -7,75 +7,14 @@ using McpUnity.Utils;
 namespace McpUnity
 {
     /// <summary>
-    /// Manual controls for MCP Unity to avoid domain reload issues
+    /// Development and testing utilities for MCP Unity
+    /// Note: Main server controls are in Tools/MCP Unity/Server Window
     /// </summary>
     public static class McpUnityMenu
     {
-        [MenuItem("MCP Unity/Initialize System")]
-        public static void InitializeSystem()
-        {
-            Debug.Log("[MCP] Initializing MCP Unity System manually...");
-            
-            // Initialize the server
-            var server = McpUnityServer.Instance;
-            if (server != null && !server.IsListening)
-            {
-                server.StartServer();
-            }
-            
-            // Initialize notifications if needed
-            UnityNotificationCollector.Initialize();
-            
-            Debug.Log("[MCP] MCP Unity System initialized");
-        }
-        
-        [MenuItem("MCP Unity/Shutdown System")]
-        public static void ShutdownSystem()
-        {
-            Debug.Log("[MCP] Shutting down MCP Unity System...");
-            
-            // Clean up notifications
-            UnityNotificationCollector.Cleanup();
-            
-            // Stop the server
-            var server = McpUnityServer.Instance;
-            if (server != null)
-            {
-                server.StopServer();
-                server.Dispose();
-            }
-            
-            Debug.Log("[MCP] MCP Unity System shut down");
-        }
-        
-        [MenuItem("MCP Unity/Server Status")]
-        public static void CheckServerStatus()
-        {
-            var server = McpUnityServer.Instance;
-            if (server != null && server.IsListening)
-            {
-                Debug.Log($"[MCP] Server is RUNNING on port {McpUnitySettings.Instance.Port}");
-                Debug.Log($"[MCP] Connected clients: {server.Clients.Count}");
-            }
-            else
-            {
-                Debug.Log("[MCP] Server is STOPPED");
-            }
-        }
-        
-        [MenuItem("MCP Unity/Tools/Build C# Server")]
-        public static void BuildCSharpServer()
-        {
-            if (McpUtils.EnsureCSharpServerBuilt())
-            {
-                Debug.Log("[MCP Unity] C# server build completed successfully");
-                EditorUtility.DisplayDialog("Build Complete", "Unity MCP C# server has been built successfully.", "OK");
-            }
-            else
-            {
-                Debug.LogError("[MCP Unity] C# server build failed");
-                EditorUtility.DisplayDialog("Build Failed", "Failed to build Unity MCP C# server. Check the console for details.", "OK");
-            }
-        }
+        // Removed redundant menu items - use Tools/MCP Unity/Server Window instead:
+        // - Initialize/Shutdown System (use Start/Stop Server buttons in UI)
+        // - Server Status (displayed in UI) 
+        // - Build C# Server (use Force Install Server button in UI)
     }
 }
