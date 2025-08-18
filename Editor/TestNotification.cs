@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using Newtonsoft.Json.Linq;
@@ -25,17 +26,21 @@ namespace McpUnity.Test
                 }
             };
             
-            // Try NotificationSender first
-            Debug.Log($"[MCP Test] NotificationSender.IsConnected: {NotificationSender.IsConnected}");
-            if (NotificationSender.IsConnected)
+            // Create a NotificationEvent to send via NotificationSender
+            var notificationEvent = new NotificationEvent
             {
-                NotificationSender.SendNotification(notification);
-                Debug.Log("[MCP Test] ✓ Sent via NotificationSender");
-            }
-            else
-            {
-                Debug.LogWarning("[MCP Test] ✗ NotificationSender not connected");
-            }
+                Type = "test",
+                Data = new JObject
+                {
+                    ["message"] = "Test MCP notification from Unity",
+                    ["timestamp"] = System.DateTime.UtcNow.ToString("O"),
+                    ["source"] = "TestNotification"
+                }
+            };
+            
+            // Send via NotificationSender batch method
+            NotificationSender.SendBatch(new List<NotificationEvent> { notificationEvent });
+            Debug.Log("[MCP Test] ✓ Sent via NotificationSender.SendBatch");
             
             // Also try direct server push
             var server = McpUnityServer.Instance;
@@ -70,7 +75,6 @@ namespace McpUnity.Test
         public static void CheckConnectionStatus()
         {
             Debug.Log("[MCP Test] === Connection Status ===");
-            Debug.Log($"[MCP Test] NotificationSender.IsConnected: {NotificationSender.IsConnected}");
             
             var server = McpUnityServer.Instance;
             if (server != null)
