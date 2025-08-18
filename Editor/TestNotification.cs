@@ -9,7 +9,7 @@ namespace McpUnity.Test
 {
     public static class TestNotification
     {
-        [MenuItem("MCP Unity/Test/Send Test Notification")]
+        [MenuItem("Tools/MCP Unity/Test/Send Test Notification")]
         public static void SendTestNotification()
         {
             Debug.Log("[MCP Test] === Testing MCP Notification System ===");
@@ -65,13 +65,13 @@ namespace McpUnity.Test
             Debug.Log("[MCP Test] === Test Complete ===");
         }
         
-        [MenuItem("MCP Unity/Test/Trigger Console Error")]
+        [MenuItem("Tools/MCP Unity/Test/Trigger Console Error")]
         public static void TriggerConsoleError()
         {
             Debug.LogError("[MCP Test] This is a test error to trigger an error notification");
         }
         
-        [MenuItem("MCP Unity/Test/Check Connection Status")]
+        [MenuItem("Tools/MCP Unity/Test/Check Connection Status")]
         public static void CheckConnectionStatus()
         {
             Debug.Log("[MCP Test] === Connection Status ===");

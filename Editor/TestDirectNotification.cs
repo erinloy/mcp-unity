@@ -7,7 +7,7 @@ namespace McpUnity.Test
 {
     public static class TestDirectNotification
     {
-        [MenuItem("MCP Unity/Test/Send Direct MCP Notification")]
+        [MenuItem("Tools/MCP Unity/Test/Send Direct MCP Notification")]
         public static void SendDirectNotification()
         {
             Debug.Log("[MCP Test] Attempting to send direct MCP notification...");

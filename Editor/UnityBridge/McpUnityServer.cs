@@ -236,6 +236,39 @@ namespace McpUnity.Unity
         {
             return _resources.TryGetValue(name, out resource);
         }
+        
+        /// <summary>
+        /// Refresh attributed tools - useful after assembly reload or when new attributed methods are added
+        /// </summary>
+        public void RefreshAttributedTools()
+        {
+            try
+            {
+                // Remove existing attributed tools
+                var keysToRemove = new List<string>();
+                foreach (var kvp in _tools)
+                {
+                    if (kvp.Value is AttributedMethodTool)
+                    {
+                        keysToRemove.Add(kvp.Key);
+                    }
+                }
+                
+                foreach (var key in keysToRemove)
+                {
+                    _tools.Remove(key);
+                }
+                
+                McpLogger.LogInfo($"[RefreshAttributedTools] Removed {keysToRemove.Count} existing attributed tools");
+                
+                // Re-register attributed tools
+                RegisterAttributedTools();
+            }
+            catch (Exception ex)
+            {
+                McpLogger.LogError($"[RefreshAttributedTools] Failed to refresh attributed tools: {ex.Message}");
+            }
+        }
 
         /// <summary>
         /// Verifies the MCP C# server is installed and ready to use.
@@ -251,8 +284,14 @@ namespace McpUnity.Unity
                 return;
             }
 
-            // Check for C# executable instead of node_modules
-            string exePath = Path.Combine(serverPath, "build", "unity-mcp.exe");
+            // Check for C# executable - use standard publish location
+            string exePath = Path.Combine(serverPath, "bin", "Release", "net8.0", "win-x64", "unity-mcp.exe");
+            if (!File.Exists(exePath))
+            {
+                // Try alternate build location for backwards compatibility
+                exePath = Path.Combine(serverPath, "build", "unity-mcp.exe");
+            }
+            
             if (!File.Exists(exePath))
             {
                 McpLogger.LogWarning($"MCP C# server executable not found at: {exePath}");
@@ -275,6 +314,18 @@ namespace McpUnity.Unity
         /// Register all available tools
         /// </summary>
         private void RegisterTools()
+        {
+            // Register built-in tools
+            RegisterBuiltInTools();
+            
+            // Discover and register attributed tools
+            RegisterAttributedTools();
+        }
+        
+        /// <summary>
+        /// Register built-in tools that ship with MCP Unity
+        /// </summary>
+        private void RegisterBuiltInTools()
         {
             // Register MenuItemTool
             MenuItemTool menuItemTool = new MenuItemTool();
@@ -315,6 +366,41 @@ namespace McpUnity.Unity
             // Register CaptureScreenshotTool
             CaptureScreenshotTool captureScreenshotTool = new CaptureScreenshotTool();
             _tools.Add(captureScreenshotTool.Name, captureScreenshotTool);
+            
+            McpLogger.LogInfo($"[RegisterTools] Registered {_tools.Count} built-in tools");
+        }
+        
+        /// <summary>
+        /// Discover and register tools from methods decorated with McpTool attributes
+        /// </summary>
+        private void RegisterAttributedTools()
+        {
+            try
+            {
+                var attributedTools = AttributedToolDiscovery.DiscoverAttributedTools();
+                int registeredCount = 0;
+                int skippedCount = 0;
+                
+                foreach (var tool in attributedTools)
+                {
+                    if (_tools.ContainsKey(tool.Name))
+                    {
+                        McpLogger.LogWarning($"[RegisterAttributedTools] Tool '{tool.Name}' already exists, skipping attributed version from {tool.GetType().Name}");
+                        skippedCount++;
+                        continue;
+                    }
+                    
+                    _tools.Add(tool.Name, tool);
+                    registeredCount++;
+                    McpLogger.LogInfo($"[RegisterAttributedTools] Registered attributed tool '{tool.Name}' (Category: {tool.Category})");
+                }
+                
+                McpLogger.LogInfo($"[RegisterAttributedTools] Successfully registered {registeredCount} attributed tools, skipped {skippedCount} duplicates");
+            }
+            catch (Exception ex)
+            {
+                McpLogger.LogError($"[RegisterAttributedTools] Failed to register attributed tools: {ex.Message}");
+            }
         }
         
         /// <summary>
