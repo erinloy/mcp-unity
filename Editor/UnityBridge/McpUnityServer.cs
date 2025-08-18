@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEditor;
 using McpUnity.Tools;
@@ -11,6 +12,8 @@ using WebSocketSharp.Server;
 using System.IO;
 using System.Diagnostics;
 using System.Net.Sockets;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace McpUnity.Unity
 {
@@ -18,10 +21,11 @@ namespace McpUnity.Unity
     /// MCP Unity Server to communicate Node.js MCP server.
     /// Uses WebSockets to communicate with Node.js.
     /// </summary>
-    [InitializeOnLoad]
+    // REMOVED [InitializeOnLoad] to prevent domain reload hangs with HotReload
     public class McpUnityServer : IDisposable
     {
         private static McpUnityServer _instance;
+        private static bool _isShuttingDown = false;
         
         private readonly Dictionary<string, McpToolBase> _tools = new Dictionary<string, McpToolBase>();
         private readonly Dictionary<string, McpResourceBase> _resources = new Dictionary<string, McpResourceBase>();
@@ -31,16 +35,8 @@ namespace McpUnity.Unity
         private TestRunnerService _testRunnerService;
         private ConsoleLogsService _consoleLogsService;
 
-        /// <summary>
-        /// Static constructor that gets called when Unity loads due to InitializeOnLoad attribute
-        /// </summary>
-        static McpUnityServer()
-        {
-            EditorApplication.delayCall += () => {
-                // Ensure Instance is created and hooks are set up after initial domain load
-                var currentInstance = Instance;
-            };
-        }
+        // Static constructor removed to prevent domain reload issues
+        // Use McpUnityMenu.InitializeSystem() to manually start
         
         /// <summary>
         /// Singleton instance accessor
@@ -49,7 +45,7 @@ namespace McpUnity.Unity
         {
             get
             {
-                if (_instance == null)
+                if (_instance == null && !_isShuttingDown && !EditorApplication.isCompiling)
                 {
                     _instance = new McpUnityServer();
                 }
@@ -72,43 +68,26 @@ namespace McpUnity.Unity
         /// </summary>
         private McpUnityServer()
         {
-            EditorApplication.quitting -= OnEditorQuitting; // Prevent multiple subscriptions on domain reload
-            EditorApplication.quitting += OnEditorQuitting;
-
-            AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
-            AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
-
-            AssemblyReloadEvents.afterAssemblyReload -= OnAfterAssemblyReload;
-            AssemblyReloadEvents.afterAssemblyReload += OnAfterAssemblyReload;
-
-            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
-            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
-
+            // Don't hook into Unity events automatically to prevent domain reload issues
+            // These will be managed manually through the menu system
+            
             InstallServer();
             InitializeServices();
             RegisterResources();
             RegisterTools();
-
-            // Initial start if auto-start is enabled and not recovering from a reload where it was off
-            if (McpUnitySettings.Instance.AutoStartServer)
-            {
-                 StartServer();
-            }
+            
+            // Don't auto-start to prevent domain reload issues
+            // Use MCP Unity/Initialize System menu item instead
         }
 
         /// <summary>
-        /// Disposes the McpUnityServer instance, stopping the WebSocket server and unsubscribing from Unity Editor events.
-        /// This method ensures proper cleanup of resources and prevents memory leaks or unexpected behavior during domain reloads or editor shutdown.
+        /// Disposes the McpUnityServer instance, stopping the WebSocket server.
+        /// This method ensures proper cleanup of resources.
         /// </summary>
         public void Dispose()
         {
             StopServer();
-
-            EditorApplication.quitting -= OnEditorQuitting;
-            AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
-            AssemblyReloadEvents.afterAssemblyReload -= OnAfterAssemblyReload;
-            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
-
+            _instance = null;
             GC.SuppressFinalize(this);
         }
         
@@ -146,30 +125,99 @@ namespace McpUnity.Unity
         }
         
         /// <summary>
+        /// Push a notification to all connected MCP clients
+        /// Server-initiated event (not a response to a request)
+        /// </summary>
+        public void PushNotification(JObject notification)
+        {
+            if (!IsListening || _webSocketServer == null)
+            {
+                McpLogger.LogWarning("[Notifications] Cannot push - server not running");
+                return;
+            }
+            
+            try
+            {
+                var message = notification.ToString(Formatting.None);
+                
+                // Send directly to each connected session using SendTo
+                var service = _webSocketServer.WebSocketServices["/McpUnity"];
+                if (service != null && service.Sessions != null)
+                {
+                    int sentCount = 0;
+                    var sessionIds = service.Sessions.IDs;
+                    
+                    if (sessionIds != null)
+                    {
+                        foreach (var sessionId in sessionIds)
+                        {
+                            try
+                            {
+                                // Use SendTo with session ID
+                                service.Sessions.SendTo(message, sessionId);
+                                sentCount++;
+                                McpLogger.LogInfo($"[Notifications] Sent {notification["method"]} to session {sessionId}");
+                            }
+                            catch (Exception sessionEx)
+                            {
+                                McpLogger.LogWarning($"[Notifications] Failed to send to session {sessionId}: {sessionEx.Message}");
+                            }
+                        }
+                    }
+                    
+                    McpLogger.LogInfo($"[Notifications] Sent notification to {sentCount} of {service.Sessions.Count} clients");
+                }
+                else
+                {
+                    McpLogger.LogWarning("[Notifications] No WebSocket service or sessions available");
+                }
+            }
+            catch (Exception ex)
+            {
+                McpLogger.LogError($"[Notifications] Push failed: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
         /// Stop the WebSocket server
         /// </summary>
         public void StopServer()
         {
-            if (!IsListening)
+            if (_webSocketServer == null)
             {
                 return;
             }
 
             try
             {
-                _webSocketServer?.Stop(); 
+                // Use async stop to avoid blocking
+                if (_webSocketServer.IsListening)
+                {
+                    Task.Run(() =>
+                    {
+                        try
+                        {
+                            _webSocketServer.Stop();
+                        }
+                        catch { }
+                    });
+                    
+                    // Don't wait for it to complete
+                }
                 
-                McpLogger.LogInfo("WebSocket server stopped");
+                McpLogger.LogInfo("WebSocket server stop initiated");
             }
             catch (Exception ex)
             {
-                McpLogger.LogError($"Error during WebSocketServer.Stop(): {ex.Message}\n{ex.StackTrace}");
+                McpLogger.LogError($"Error during WebSocketServer.Stop(): {ex.Message}");
             }
             finally
             {
+                // Clean up references immediately
                 _webSocketServer = null; 
                 Clients.Clear(); 
-                McpLogger.LogInfo("WebSocket server stopped and resources cleaned up.");
+                
+                McpLogger.LogInfo("WebSocket server resources released");
             }
         }
         
@@ -315,72 +363,7 @@ namespace McpUnity.Unity
             _consoleLogsService = new ConsoleLogsService();
         }
 
-        /// <summary>
-        /// Handles the Unity Editor quitting event. Ensures the server is properly stopped and disposed.
-        /// </summary>
-        private static void OnEditorQuitting()
-        {
-            McpLogger.LogInfo("Editor is quitting. Ensuring server is stopped.");
-            Instance.Dispose();
-            // Release the port allocation for this Unity instance
-            PortManager.ReleasePort();
-            // Unregister from service discovery
-            ServiceDiscovery.UnregisterService();
-        }
-
-        /// <summary>
-        /// Handles the Unity Editor's 'before assembly reload' event.
-        /// Stops the WebSocket server to prevent port conflicts and ensure a clean state before scripts are recompiled.
-        /// </summary>
-        private static void OnBeforeAssemblyReload()
-        {
-            if (Instance.IsListening)
-            {
-                Instance.StopServer();
-            }
-        }
-
-        /// <summary>
-        /// Handles the Unity Editor's 'after assembly reload' event.
-        /// If auto-start is enabled, attempts to restart the WebSocket server if it's not already listening.
-        /// This ensures the server is operational after script recompilation.
-        /// </summary>
-        private static void OnAfterAssemblyReload()
-        {
-            if (McpUnitySettings.Instance.AutoStartServer && !Instance.IsListening)
-            {
-                Instance.StartServer();
-            }
-        }
-
-        /// <summary>
-        /// Handles changes in Unity Editor's play mode state.
-        /// Stops the server when exiting Edit Mode if configured, and restarts it when entering Play Mode or returning to Edit Mode if auto-start is enabled.
-        /// </summary>
-        /// <param name="state">The current play mode state change.</param>
-        private static void OnPlayModeStateChanged(PlayModeStateChange state)
-        {
-            switch (state)
-            {
-                case PlayModeStateChange.ExitingEditMode:
-                    // About to enter Play Mode
-                    if (Instance.IsListening)
-                    {
-                        Instance.StopServer();
-                    }
-                    break;
-                case PlayModeStateChange.EnteredPlayMode:
-                case PlayModeStateChange.ExitingPlayMode:
-                    // Server is disabled during play mode as domain reload will be triggered again when stopped.
-                    break;
-                case PlayModeStateChange.EnteredEditMode:
-                    // Returned to Edit Mode
-                    if (!Instance.IsListening && McpUnitySettings.Instance.AutoStartServer)
-                    {
-                        Instance.StartServer();
-                    }
-                    break;
-            }
-        }
+        // Event handlers removed to prevent domain reload issues
+        // Server lifecycle is now managed manually through the menu system
     }
 }

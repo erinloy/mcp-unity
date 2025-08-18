@@ -707,18 +707,79 @@ namespace McpUnity.DirectMcp
         {
             try
             {
+                // Log raw data from Unity for debugging
+                try
+                {
+                    var rawLogPath = @"C:\temp\mcp-notifications-raw.log";
+                    var logDir = Path.GetDirectoryName(rawLogPath);
+                    if (!Directory.Exists(logDir))
+                    {
+                        Directory.CreateDirectory(logDir);
+                    }
+                    File.AppendAllText(rawLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] RAW FROM UNITY:\n{json}\n\n");
+                }
+                catch { /* Ignore logging errors */ }
+                
                 var response = JObject.Parse(json);
                 var id = response["id"]?.ToString();
                 
-                if (!string.IsNullOrEmpty(id) && _pendingRequests.TryGetValue(id, out var tcs))
+                // Check if this is a notification (no id field) or a response (has id field)
+                if (string.IsNullOrEmpty(id))
                 {
+                    // This is a notification from Unity - forward it upstream to Claude
+                    var method = response["method"]?.ToString();
+                    if (!string.IsNullOrEmpty(method))
+                    {
+                        Console.Error.WriteLine($"[UnityMCP] Forwarding notification: {method}");
+                        
+                        // Ensure the notification is properly formatted for MCP
+                        // Remove any 'id' field and ensure jsonrpc is present
+                        var notification = new JObject
+                        {
+                            ["jsonrpc"] = "2.0",
+                            ["method"] = method
+                        };
+                        
+                        // Copy params if present
+                        if (response["params"] != null)
+                        {
+                            notification["params"] = response["params"];
+                        }
+                        
+                        // Write notification to stdout for MCP client (Claude)
+                        var notificationJson = notification.ToString(Formatting.None);
+                        Console.WriteLine(notificationJson);
+                        Console.Out.Flush();
+                        
+                        // Also log to file for debugging
+                        try
+                        {
+                            var logPath = @"C:\temp\mcp-notifications.log";
+                            var logDir = Path.GetDirectoryName(logPath);
+                            if (!Directory.Exists(logDir))
+                            {
+                                Directory.CreateDirectory(logDir);
+                            }
+                            File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {notificationJson}\n");
+                        }
+                        catch (Exception logEx)
+                        {
+                            Console.Error.WriteLine($"[UnityMCP] Failed to log notification: {logEx.Message}");
+                        }
+                        
+                        Console.Error.WriteLine($"[UnityMCP] Sent notification: {notificationJson}");
+                    }
+                }
+                else if (_pendingRequests.TryGetValue(id, out var tcs))
+                {
+                    // This is a response to our request
                     _pendingRequests.Remove(id);
                     tcs.SetResult(response);
                 }
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[UnityMCP] Error handling Unity response: {ex.Message}");
+                Console.Error.WriteLine($"[UnityMCP] Error handling Unity message: {ex.Message}");
             }
         }
 
