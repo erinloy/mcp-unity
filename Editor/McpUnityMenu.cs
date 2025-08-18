@@ -62,5 +62,20 @@ namespace McpUnity
                 Debug.Log("[MCP] Server is STOPPED");
             }
         }
+        
+        [MenuItem("MCP Unity/Tools/Build C# Server")]
+        public static void BuildCSharpServer()
+        {
+            if (McpUtils.EnsureCSharpServerBuilt())
+            {
+                Debug.Log("[MCP Unity] C# server build completed successfully");
+                EditorUtility.DisplayDialog("Build Complete", "Unity MCP C# server has been built successfully.", "OK");
+            }
+            else
+            {
+                Debug.LogError("[MCP Unity] C# server build failed");
+                EditorUtility.DisplayDialog("Build Failed", "Failed to build Unity MCP C# server. Check the console for details.", "OK");
+            }
+        }
     }
 }

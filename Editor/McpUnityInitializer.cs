@@ -54,6 +54,12 @@ namespace McpUnity
                 
                 McpLogger.LogInfo("[MCP] Starting MCP Unity System (delayed initialization)...");
                 
+                // Ensure C# server is built
+                if (!McpUtils.EnsureCSharpServerBuilt())
+                {
+                    McpLogger.LogWarning("[MCP] C# server build failed or executable not found. Server may not start properly.");
+                }
+                
                 // Initialize the server
                 var server = McpUnityServer.Instance;
                 if (server != null && !server.IsListening)

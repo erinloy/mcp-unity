@@ -16,21 +16,14 @@ dotnet build -c Release
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Build successful!" -ForegroundColor Green
+    Write-Host "Unity MCP Server built successfully!" -ForegroundColor Green
+    Write-Host "Output: .\bin\Release\net8.0\win-x64\unity-mcp.exe" -ForegroundColor Cyan
     
-    # Publish as single file
-    Write-Host "Publishing as single executable..." -ForegroundColor Yellow
-    dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o .\build
-    
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Unity MCP Server built successfully!" -ForegroundColor Green
-        Write-Host "Output: .\build\unity-mcp.exe" -ForegroundColor Cyan
-        
-        # Show file info
-        $exe = Get-Item ".\build\unity-mcp.exe"
+    # Show file info if it exists
+    $exePath = ".\bin\Release\net8.0\win-x64\unity-mcp.exe"
+    if (Test-Path $exePath) {
+        $exe = Get-Item $exePath
         Write-Host "File size: $([math]::Round($exe.Length / 1MB, 2)) MB" -ForegroundColor Gray
-    } else {
-        Write-Host "Publish failed!" -ForegroundColor Red
-        exit 1
     }
 } else {
     Write-Host "Build failed!" -ForegroundColor Red

@@ -388,6 +388,61 @@ namespace McpUnity.Utils
         }
 
         /// <summary>
+        /// Builds the C# MCP server if the executable doesn't exist
+        /// </summary>
+        public static bool EnsureCSharpServerBuilt()
+        {
+            string serverPath = GetServerPath();
+            string exePath = Path.Combine(serverPath, "bin", "Release", "net8.0", "win-x64", "unity-mcp.exe");
+            
+            // Check if exe already exists
+            if (File.Exists(exePath))
+            {
+                return true;
+            }
+            
+            Debug.Log("[MCP Unity] C# server executable not found. Building...");
+            
+            // Build using dotnet CLI
+            try
+            {
+                var startInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "dotnet",
+                    Arguments = "build -c Release",  // Just build, don't publish - the csproj handles the rest
+                    WorkingDirectory = serverPath,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                
+                using (var process = System.Diagnostics.Process.Start(startInfo))
+                {
+                    string output = process.StandardOutput.ReadToEnd();
+                    string error = process.StandardError.ReadToEnd();
+                    process.WaitForExit();
+                    
+                    if (process.ExitCode == 0)
+                    {
+                        Debug.Log($"[MCP Unity] Build successful:\n{output}");
+                        return File.Exists(exePath);
+                    }
+                    else
+                    {
+                        Debug.LogError($"[MCP Unity] Build failed:\n{error}");
+                        return false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[MCP Unity] Failed to build C# server: {ex.Message}");
+                return false;
+            }
+        }
+        
+        /// <summary>
         /// Runs an npm command (such as install or build) in the specified working directory.
         /// Handles cross-platform compatibility (Windows/macOS/Linux) for invoking npm.
         /// Logs output and errors to the Unity console.
