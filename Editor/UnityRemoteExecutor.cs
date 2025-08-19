@@ -11,7 +11,7 @@ namespace McpUnity.DirectMcp
     /// </summary>
     public static class UnityRemoteExecutor
     {
-        [MenuItem("MCP/Test Connection")]
+        [MenuItem("Tools/MCP Unity/Test Connection")]
         public static void TestConnection()
         {
             Debug.Log("[MCP] Unity MCP Remote Executor is working!");

@@ -27,7 +27,7 @@ namespace McpUnity.Resources
         /// Execute the resource to get packages information
         /// </summary>
         /// <param name="parameters">Optional parameters for filtering</param>
-        /// <returns>JObject containing packages information</returns>
+        /// <returns>JObject containing packages information in MCP format</returns>
         public override JObject Fetch(JObject parameters)
         {
             // Get project packages (installed)
@@ -35,14 +35,27 @@ namespace McpUnity.Resources
                 
             // Get registry packages
             var registryPackages = GetRegistryPackages();
+            
+            // Create the content as JSON
+            var packageData = new JObject
+            {
+                ["projectPackages"] = projectPackages,
+                ["registryPackages"] = registryPackages,
+                ["summary"] = $"Retrieved {projectPackages.Count} project packages and {registryPackages.Count} registry packages"
+            };
                 
-            // Return combined result
+            // Return MCP-compliant resource result format
             return new JObject
             {
-                ["success"] = true,
-                ["message"] = $"Retrieved {projectPackages.Count} project packages and {registryPackages.Count} registry packages",
-                ["projectPackages"] = projectPackages,
-                ["registryPackages"] = registryPackages
+                ["contents"] = new JArray
+                {
+                    new JObject
+                    {
+                        ["uri"] = Uri,
+                        ["mimeType"] = "application/json",
+                        ["text"] = packageData.ToString()
+                    }
+                }
             };
         }
         

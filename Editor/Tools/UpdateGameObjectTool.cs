@@ -19,6 +19,43 @@ namespace McpUnity.Tools
             Name = "update_gameobject";
             Description = "Updates or creates a GameObject and its properties (name, tag, layer, active state, static state) based on instance ID or object path.";
             IsAsync = false; // Operations are expected to be quick
+            
+            // Set explicit schema for this tool
+            InputSchema = new JObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JObject
+                {
+                    ["instanceId"] = new JObject
+                    {
+                        ["type"] = "integer",
+                        ["description"] = "Instance ID of the GameObject"
+                    },
+                    ["objectPath"] = new JObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Hierarchy path to the GameObject"
+                    },
+                    ["gameObjectData"] = new JObject
+                    {
+                        ["type"] = "object",
+                        ["description"] = "GameObject properties to update",
+                        ["properties"] = new JObject
+                        {
+                            ["name"] = new JObject { ["type"] = "string" },
+                            ["tag"] = new JObject { ["type"] = "string" },
+                            ["layer"] = new JObject { ["type"] = "integer" },
+                            ["active"] = new JObject { ["type"] = "boolean" },
+                            ["static"] = new JObject { ["type"] = "boolean" }
+                        }
+                    }
+                },
+                ["oneOf"] = new JArray
+                {
+                    new JObject { ["required"] = new JArray { "instanceId" } },
+                    new JObject { ["required"] = new JArray { "objectPath" } }
+                }
+            };
         }
 
         /// <summary>

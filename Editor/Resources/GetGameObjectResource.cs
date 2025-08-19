@@ -29,10 +29,22 @@ namespace McpUnity.Resources
             // Validate parameters
             if (parameters == null || !parameters.ContainsKey("idOrName"))
             {
+                // Return MCP-compliant error format
                 return new JObject
                 {
-                    ["success"] = false,
-                    ["message"] = "Missing required parameter: idOrName"
+                    ["contents"] = new JArray
+                    {
+                        new JObject
+                        {
+                            ["uri"] = Uri,
+                            ["mimeType"] = "application/json",
+                            ["text"] = new JObject
+                            {
+                                ["error"] = true,
+                                ["message"] = "Missing required parameter: idOrName"
+                            }.ToString()
+                        }
+                    }
                 };
             }
 
@@ -40,10 +52,22 @@ namespace McpUnity.Resources
             
             if (string.IsNullOrEmpty(idOrName))
             {
+                // Return MCP-compliant error format
                 return new JObject
                 {
-                    ["success"] = false,
-                    ["message"] = "Parameter 'objectPathId' cannot be null or empty"
+                    ["contents"] = new JArray
+                    {
+                        new JObject
+                        {
+                            ["uri"] = Uri,
+                            ["mimeType"] = "application/json",
+                            ["text"] = new JObject
+                            {
+                                ["error"] = true,
+                                ["message"] = "Parameter 'idOrName' cannot be null or empty"
+                            }.ToString()
+                        }
+                    }
                 };
             }
 
@@ -65,23 +89,48 @@ namespace McpUnity.Resources
             // Check if the GameObject was found
             if (gameObject == null)
             {
+                // Return MCP-compliant error format
                 return new JObject
                 {
-                    ["success"] = false,
-                    ["message"] = $"GameObject with '{idOrName}' reference not found. Make sure the GameObject exists and is loaded in the current scene(s)."
+                    ["contents"] = new JArray
+                    {
+                        new JObject
+                        {
+                            ["uri"] = Uri.Replace("{idOrName}", idOrName),
+                            ["mimeType"] = "application/json",
+                            ["text"] = new JObject
+                            {
+                                ["error"] = true,
+                                ["message"] = $"GameObject with '{idOrName}' reference not found. Make sure the GameObject exists and is loaded in the current scene(s)."
+                            }.ToString()
+                        }
+                    }
                 };
             }
 
             // Convert the GameObject to a JObject
             JObject gameObjectData = GameObjectToJObject(gameObject, true);
+            
+            // Create the content as JSON
+            var objectData = new JObject
+            {
+                ["gameObject"] = gameObjectData,
+                ["instanceId"] = gameObject.GetInstanceID(),
+                ["summary"] = $"Retrieved GameObject data for '{gameObject.name}'"
+            };
                 
-            // Create the response
+            // Return MCP-compliant resource result format
             return new JObject
             {
-                ["success"] = true,
-                ["message"] = $"Retrieved GameObject data for '{gameObject.name}'",
-                ["gameObject"] = gameObjectData,
-                ["instanceId"] = gameObject.GetInstanceID()
+                ["contents"] = new JArray
+                {
+                    new JObject
+                    {
+                        ["uri"] = Uri.Replace("{idOrName}", idOrName),
+                        ["mimeType"] = "application/json",
+                        ["text"] = objectData.ToString()
+                    }
+                }
             };
         }
 

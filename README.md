@@ -1,14 +1,24 @@
-This is a personal fork of https://github.com/CoderGamester/mcp-unity
+# MCP Unity Editor - C# Implementation
 
+This is a C# implementation of MCP Unity, forked from the excellent work at https://github.com/CoderGamester/mcp-unity.
 
+**This fork's repository**: https://github.com/erinloy/mcp-unity
 
-# MCP Unity Editor (Game Engine)
+## Implementation Details
+
+- **Language**: Pure C#
+- **Server Location**: `Editor/DirectMcp/unity-mcp.exe`
+- **Communication**: stdio protocol
+- **Configuration**: Auto-detected from Unity project root
+- **Settings**: `ProjectSettings/McpUnitySettings.json`
+
+---
+
+# MCP Unity Editor Documentation
 
 [![](https://badge.mcpx.dev?status=on 'MCP Enabled')](https://modelcontextprotocol.io/introduction)
 [![](https://img.shields.io/badge/Unity-000000?style=flat&logo=unity&logoColor=white 'Unity')](https://unity.com/releases/editor/archive)
-[![](https://img.shields.io/badge/Node.js-339933?style=flat&logo=nodedotjs&logoColor=white 'Node.js')](https://nodejs.org/en/download/)
-[![](https://img.shields.io/github/stars/CoderGamester/mcp-unity 'Stars')](https://github.com/CoderGamester/mcp-unity/stargazers)
-[![](https://img.shields.io/github/last-commit/CoderGamester/mcp-unity 'Last Commit')](https://github.com/CoderGamester/mcp-unity/commits/main)
+[![](https://img.shields.io/badge/C%23-239120?style=flat&logo=csharp&logoColor=white 'C#')](https://docs.microsoft.com/en-us/dotnet/csharp/)
 [![](https://img.shields.io/badge/License-MIT-red.svg 'MIT License')](https://opensource.org/licenses/MIT)
 
 | [English](README.md) | [🇨🇳简体中文](README_zh-CN.md) | [🇯🇵日本語](README-ja.md) |
@@ -116,9 +126,7 @@ The following tools are available for manipulating and querying Unity scenes and
   > **Example prompt:** "List all available tests in my Unity project"
 
 ## Requirements
-- Unity 2022.3 or later - to [install the server](#install-server)
-- Node.js 18 or later - to [start the server](#start-server)
-- npm 9 or later - to [debug the server](#debug-server)
+- Unity 2022.3 or later
 
 > [!IMPORTANT]
 > **Project Path Cannot Contain Spaces**
@@ -134,51 +142,16 @@ The following tools are available for manipulating and querying Unity scenes and
 
 ## <a name="install-server"></a>Installation
 
-Installing this MCP Unity Server is a multi-step process:
-
-### Step 1: Install Node.js 
-> To run MCP Unity server, you'll need to have Node.js 18 or later installed on your computer:
-
-![node](docs/node.jpg)
-
-<details>
-<summary><span style="font-size: 1.1em; font-weight: bold;">Windows</span></summary>
-
-1. Visit the [Node.js download page](https://nodejs.org/en/download/)
-2. Download the Windows Installer (.msi) for the LTS version (recommended)
-3. Run the installer and follow the installation wizard
-4. Verify the installation by opening PowerShell and running:
-   ```bash
-   node --version
-   ```
-</details>
-
-<details>
-<summary><span style="font-size: 1.1em; font-weight: bold;">macOS</span></summary>
-
-1. Visit the [Node.js download page](https://nodejs.org/en/download/)
-2. Download the macOS Installer (.pkg) for the LTS version (recommended)
-3. Run the installer and follow the installation wizard
-4. Alternatively, if you have Homebrew installed, you can run:
-   ```bash
-   brew install node@18
-   ```
-5. Verify the installation by opening Terminal and running:
-   ```bash
-   node --version
-   ```
-</details>
-
-### Step 2: Install Unity MCP Server package via Unity Package Manager
+### Step 1: Install Unity MCP Server package via Unity Package Manager
 1. Open the Unity Package Manager (Window > Package Manager)
 2. Click the "+" button in the top-left corner
 3. Select "Add package from git URL..."
-4. Enter: `https://github.com/CoderGamester/mcp-unity.git`
+4. Enter: `https://github.com/erinloy/mcp-unity.git`
 5. Click "Add"
 
 ![package manager](https://github.com/user-attachments/assets/a72bfca4-ae52-48e7-a876-e99c701b0497)
 
-### Step 3: Configure AI LLM Client
+### Step 2: Configure AI LLM Client (C# Server)
 
 <details open>
 <summary><span style="font-size: 1.1em; font-weight: bold;">Option 1: Configure using Unity Editor</span></summary>
@@ -198,142 +171,75 @@ Installing this MCP Unity Server is a multi-step process:
 <details>
 <summary><span style="font-size: 1.1em; font-weight: bold;">Option 2: Configure Manually</span></summary>
 
-Open the MCP configuration file of your AI client (e.g. claude_desktop_config.json in Claude Desktop) and copy the following text:
+Open the MCP configuration file of your AI client (e.g. claude_desktop_config.json in Claude Desktop) and add:
 
-> Replace `ABSOLUTE/PATH/TO` with the absolute path to your MCP Unity installation or just copy the text from the Unity Editor MCP Server window (Tools > MCP Unity > Server Window).
+> Replace `ABSOLUTE/PATH/TO` with the absolute path to your Unity project's mcp-unity installation.
 
 ```json
 {
    "mcpServers": {
-       "mcp-unity": {
-          "command": "node",
-          "args": [
-             "ABSOLUTE/PATH/TO/mcp-unity/Server~/build/index.js"
-          ]
+       "unity-mcp": {
+          "command": "ABSOLUTE/PATH/TO/mcp-unity/Editor/DirectMcp/unity-mcp.exe"
        }
    }
 }
 ```
 
+The server automatically detects the Unity project root.
+
 </details>
 
 ## <a name="start-server"></a>Start Unity Editor MCP Server
-1. Open the Unity Editor
-2. Navigate to Tools > MCP Unity > Server Window
-3. Click "Start Server" to start the WebSocket server
-4. Open Claude Desktop or your AI Coding IDE (e.g. Cursor IDE, Windsurf IDE, etc.) and start executing Unity tools
-   
-![connect](https://github.com/user-attachments/assets/2e266a8b-8ba3-4902-b585-b220b11ab9a2)
 
-> When the AI client connects to the WebSocket server, it will automatically show in the green box in the window
+1. Configure your MCP client (Claude, Cursor, etc.) with the path to `unity-mcp.exe`
+2. The server starts automatically when your MCP client connects
+3. The executable launches Unity in batch mode to handle MCP requests
 
-## Optional: Set WebSocket Port
-By default, the WebSocket server runs on port '8090'. You can change this port in two ways:
+## Configuration
 
-1. Open the Unity Editor
-2. Navigate to Tools > MCP Unity > Server Window
-3. Change the "WebSocket Port" value to your desired port number
-4. Unity will setup the system environment variable UNITY_PORT to the new port number
-5. Restart the Node.js server
-6. Click again on "Start Server" to reconnect the Unity Editor web socket to the Node.js MCP Server
+Configuration is stored in `ProjectSettings/McpUnitySettings.json`:
 
-## Optional: Set Timeout
-
-By default, the timeout between the MCP server and the WebSocket is 10 seconds.
-You can change depending on the OS you are using:
-
-1. Open the Unity Editor
-2. Navigate to Tools > MCP Unity > Server Window
-3. Change the "Request Timeout (seconds)" value to your desired timeout seconds
-4. Unity will setup the system environment variable UNITY_REQUEST_TIMEOUT to the new timeout value
-5. Restart the Node.js server
-6. Click again on "Start Server" to reconnect the Unity Editor web socket to the Node.js MCP Server
-
-> [!TIP]  
-> The timeout between your AI Coding IDE (e.g., Claude Desktop, Cursor IDE, Windsurf IDE) and the MCP Server depends on the IDE.
-
-## Optional: Allow Remote MCP Bridge Connections
-
-By default, the WebSocket server binds to 'localhost'. To allow MCP bridge connections from other machines:
-
-1. Open the Unity Editor
-2. Navigate to Tools > MCP Unity > Server Window
-3. Enable the "Allow Remote Connections" checkbox
-4. Unity will bind the WebSocket server to '0.0.0.0' (all interfaces)
-5. Restart the Node.js server to apply the new host configuration
-6. Set the environment variable UNITY_HOST to your Unity machine's IP address when running the MCP bridge remotely: `UNITY_HOST=192.168.1.100 node server.js`
+- **Auto-detection**: The server automatically finds your Unity project root
+- **Communication**: Uses stdio protocol
+- **Settings**: Managed through the configuration file
 
 ## <a name="debug-server"></a>Debugging the Server
 
 <details>
-<summary><span style="font-size: 1.1em; font-weight: bold;">Building the Node.js Server</span></summary>
+<summary><span style="font-size: 1.1em; font-weight: bold;">Debugging</span></summary>
 
-The MCP Unity server is built using Node.js . It requires to compile the TypeScript code to JavaScript in the `build` directory.
-In case of issues, you can force install it in by:
+The server can be debugged using standard C# debugging tools:
 
-1. Open the Unity Editor
-2. Navigate to Tools > MCP Unity > Server Window
-3. Click on "Force Install Server" button
+1. **Unity Console**: Server logs appear in the Unity console
+2. **C# Debugger**: Use your IDE's debugger to set breakpoints in the server code
+3. **Compilation**: Changes to C# code are compiled by Unity
 
-![install](docs/install.jpg)
-
-If you want to build it manually, you can follow these steps:
-
-1. Open a terminal/PowerShell/Command Prompt
-
-2. Navigate to the Server directory:
-   ```bash
-   cd ABSOLUTE/PATH/TO/mcp-unity/Server~
-   ```
-
-3. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-4. Build the server:
-   ```bash
-   npm run build
-   ```
-
-5. Run the server:
-   ```bash
-   node build/index.js
-   ```
+**To debug the server:**
+1. Open the project in your C# IDE (Visual Studio, Rider, etc.)
+2. Set breakpoints in the `Editor/DirectMcp/` files
+3. Attach the debugger to Unity
+4. The server will hit breakpoints when MCP clients make requests
 
 </details>
    
 <details>
-<summary><span style="font-size: 1.1em; font-weight: bold;">Debugging with MCP Inspector</span></summary>
+<summary><span style="font-size: 1.1em; font-weight: bold;">MCP Inspector</span></summary>
 
 Debug the server with [@modelcontextprotocol/inspector](https://github.com/modelcontextprotocol/inspector):
-   - Powershell
    ```powershell
-   npx @modelcontextprotocol/inspector node Server~/build/index.js
+   npx @modelcontextprotocol/inspector "path/to/unity-mcp.exe"
    ```
-   - Command Prompt/Terminal
-   ```cmd
-   npx @modelcontextprotocol/inspector node Server~/build/index.js
-   ```
-
-Don't forget to shutdown the server with `Ctrl + C` before closing the terminal or debugging it with the [MCP Inspector](https://github.com/modelcontextprotocol/inspector).
 
 </details>
 
 <details>
-<summary><span style="font-size: 1.1em; font-weight: bold;">Enable Console Logs</span></summary>
+<summary><span style="font-size: 1.1em; font-weight: bold;">Logging</span></summary>
 
-1. Enable logging on your terminal or into a log.txt file:
-   - Powershell
-   ```powershell
-   $env:LOGGING = "true"
-   $env:LOGGING_FILE = "true"
-   ```
-   - Command Prompt/Terminal
-   ```cmd
-   set LOGGING=true
-   set LOGGING_FILE=true
-   ```
+Logs are automatically written to:
+- Unity Console (when running in Editor)
+- Standard error stream (when running as subprocess)
+
+Check the Unity console or your MCP client's debug output for server logs.
 
 </details>
 

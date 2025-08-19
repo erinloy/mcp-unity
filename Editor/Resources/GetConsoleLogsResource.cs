@@ -45,15 +45,33 @@ namespace McpUnity.Resources
             int filteredCount = result["_filteredCount"]?.Value<int>() ?? 0;
             int totalCount = result["_totalCount"]?.Value<int>() ?? 0;
             
-            result["message"] = $"Retrieved {returnedCount} of {filteredCount} log entries{typeFilter} (offset: {offset}, limit: {limit}, includeStackTrace: {includeStackTrace}, total: {totalCount})";
-            result["success"] = true;
+            // Prepare the log data with metadata
+            var logData = new JObject
+            {
+                ["logs"] = result["logs"],
+                ["totalCount"] = totalCount,
+                ["filteredCount"] = filteredCount,
+                ["returnedCount"] = returnedCount,
+                ["offset"] = offset,
+                ["limit"] = limit,
+                ["includeStackTrace"] = includeStackTrace,
+                ["logType"] = logType ?? "all",
+                ["summary"] = $"Retrieved {returnedCount} of {filteredCount} log entries{typeFilter}"
+            };
             
-            // Remove internal count fields (they're now in the message)
-            result.Remove("_totalCount");
-            result.Remove("_filteredCount");
-            result.Remove("_returnedCount");
-
-            return result;
+            // Return MCP-compliant resource result format
+            return new JObject
+            {
+                ["contents"] = new JArray
+                {
+                    new JObject
+                    {
+                        ["uri"] = Uri.Replace("{logType}", logType ?? "all"),
+                        ["mimeType"] = "application/json",
+                        ["text"] = logData.ToString()
+                    }
+                }
+            };
         }
 
         /// <summary>

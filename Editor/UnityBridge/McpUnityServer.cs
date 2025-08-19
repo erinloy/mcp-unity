@@ -182,11 +182,11 @@ namespace McpUnity.Unity
         }
         
         /// <summary>
-        /// Try to get a resource by name
+        /// Try to get a resource by URI
         /// </summary>
-        public bool TryGetResource(string name, out McpResourceBase resource)
+        public bool TryGetResource(string uri, out McpResourceBase resource)
         {
-            return _resources.TryGetValue(name, out resource);
+            return _resources.TryGetValue(uri, out resource);
         }
         
         /// <summary>
@@ -206,8 +206,8 @@ namespace McpUnity.Unity
         }
 
         /// <summary>
-        /// Installs the MCP Node.js server by running 'npm install' and 'npm run build'
-        /// in the server directory if 'node_modules' or 'build' folders are missing.
+        /// Verifies the MCP C# server is available.
+        /// The C# implementation doesn't require npm install or build steps.
         /// </summary>
         public void InstallServer()
         {
@@ -215,20 +215,24 @@ namespace McpUnity.Unity
 
             if (string.IsNullOrEmpty(serverPath) || !Directory.Exists(serverPath))
             {
-                McpLogger.LogError($"Server path not found or invalid: {serverPath}. Make sure that MCP Node.js server is installed.");
+                McpLogger.LogError($"Server path not found or invalid: {serverPath}. Make sure that MCP C# server is installed.");
                 return;
             }
 
-            string nodeModulesPath = Path.Combine(serverPath, "node_modules");
-            if (!Directory.Exists(nodeModulesPath))
+            // Check for the C# executable
+            string exePath = Path.Combine(serverPath, "bin", "Release", "net8.0", "win-x64", "unity-mcp.exe");
+            if (!File.Exists(exePath))
             {
-                McpUtils.RunNpmCommand("install", serverPath);
+                // Try alternative location
+                exePath = Path.Combine(serverPath, "unity-mcp.exe");
+                if (!File.Exists(exePath))
+                {
+                    McpLogger.LogWarning($"Unity MCP executable not found at expected locations. Building may be required.");
+                }
             }
-
-            string buildPath = Path.Combine(serverPath, "build");
-            if (!Directory.Exists(buildPath))
+            else
             {
-                McpUtils.RunNpmCommand("run build", serverPath);
+                McpLogger.LogInfo($"Unity MCP C# server found at: {exePath}");
             }
         }
         
@@ -276,6 +280,10 @@ namespace McpUnity.Unity
             // Register CaptureScreenshotTool
             CaptureScreenshotTool captureScreenshotTool = new CaptureScreenshotTool();
             _tools.Add(captureScreenshotTool.Name, captureScreenshotTool);
+            
+            // Register TestHotReloadTool - Added for testing hot-reload functionality
+            TestHotReloadTool testHotReloadTool = new TestHotReloadTool();
+            _tools.Add(testHotReloadTool.Name, testHotReloadTool);
         }
         
         /// <summary>
@@ -283,33 +291,33 @@ namespace McpUnity.Unity
         /// </summary>
         private void RegisterResources()
         {
-            // Register GetMenuItemsResource
+            // Register GetMenuItemsResource (by URI for proper lookup)
             GetMenuItemsResource getMenuItemsResource = new GetMenuItemsResource();
-            _resources.Add(getMenuItemsResource.Name, getMenuItemsResource);
+            _resources.Add(getMenuItemsResource.Uri, getMenuItemsResource);
             
             // Register GetConsoleLogsResource
             GetConsoleLogsResource getConsoleLogsResource = new GetConsoleLogsResource(_consoleLogsService);
-            _resources.Add(getConsoleLogsResource.Name, getConsoleLogsResource);
+            _resources.Add(getConsoleLogsResource.Uri, getConsoleLogsResource);
             
             // Register GetScenesHierarchyResource
             GetScenesHierarchyResource getScenesHierarchyResource = new GetScenesHierarchyResource();
-            _resources.Add(getScenesHierarchyResource.Name, getScenesHierarchyResource);
+            _resources.Add(getScenesHierarchyResource.Uri, getScenesHierarchyResource);
             
             // Register GetPackagesResource
             GetPackagesResource getPackagesResource = new GetPackagesResource();
-            _resources.Add(getPackagesResource.Name, getPackagesResource);
+            _resources.Add(getPackagesResource.Uri, getPackagesResource);
             
             // Register GetAssetsResource
             GetAssetsResource getAssetsResource = new GetAssetsResource();
-            _resources.Add(getAssetsResource.Name, getAssetsResource);
+            _resources.Add(getAssetsResource.Uri, getAssetsResource);
             
             // Register GetTestsResource
             GetTestsResource getTestsResource = new GetTestsResource(_testRunnerService);
-            _resources.Add(getTestsResource.Name, getTestsResource);
+            _resources.Add(getTestsResource.Uri, getTestsResource);
             
             // Register GetGameObjectResource
             GetGameObjectResource getGameObjectResource = new GetGameObjectResource();
-            _resources.Add(getGameObjectResource.Name, getGameObjectResource);
+            _resources.Add(getGameObjectResource.Uri, getGameObjectResource);
         }
         
         /// <summary>

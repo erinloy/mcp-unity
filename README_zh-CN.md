@@ -1,10 +1,24 @@
-# MCP Unity Editor（游戏引擎）
+# MCP Unity Editor - C# 实现
+
+这是 MCP Unity 的 C# 实现，基于 https://github.com/CoderGamester/mcp-unity 的优秀工作。
+
+**此分支的仓库**: https://github.com/erinloy/mcp-unity
+
+## 实现详情
+
+- **语言**：纯 C#
+- **服务器位置**：`Editor/DirectMcp/unity-mcp.exe`
+- **通信**：stdio 协议
+- **配置**：自动检测 Unity 项目根目录
+- **设置**：`ProjectSettings/McpUnitySettings.json`
+
+---
+
+# MCP Unity Editor 文档
 
 [![](https://badge.mcpx.dev?status=on 'MCP 启用')](https://modelcontextprotocol.io/introduction)
 [![](https://img.shields.io/badge/Unity-000000?style=flat&logo=unity&logoColor=white 'Unity')](https://unity.com/releases/editor/archive)
-[![](https://img.shields.io/badge/Node.js-339933?style=flat&logo=nodedotjs&logoColor=white 'Node.js')](https://nodejs.org/en/download/)
-[![](https://img.shields.io/github/stars/CoderGamester/mcp-unity 'Stars')](https://github.com/CoderGamester/mcp-unity/stargazers)
-[![](https://img.shields.io/github/last-commit/CoderGamester/mcp-unity 'Last Commit')](https://github.com/CoderGamester/mcp-unity/commits/main)
+[![](https://img.shields.io/badge/C%23-239120?style=flat&logo=csharp&logoColor=white 'C#')](https://docs.microsoft.com/en-us/dotnet/csharp/)
 [![](https://img.shields.io/badge/License-MIT-red.svg 'MIT 许可证')](https://opensource.org/licenses/MIT)
 
 | [英文](README.md) | [🇨🇳简体中文](README_zh-CN.md) | [🇯🇵日本語](README-ja.md) |
@@ -42,7 +56,7 @@
      ╚═╝     ╚═╝ ╚═════╝╚═╝              ╚═════╝ ╚═╝  ╚═══╝╚═╝   ╚═╝      ╚═╝   
 ```       
 
-MCP Unity 是 Model Context Protocol 在 Unity 编辑器中的实现，允许 AI 助手与您的 Unity 项目交互。这个包提供了 Unity 和实现 MCP 协议的 Node.js 服务器之间的桥梁，使 Claude、Windsurf 和 Cursor 等 AI 代理能够在 Unity 编辑器中执行操作。
+MCP Unity 是 Model Context Protocol 在 Unity 编辑器中的实现，允许 AI 助手与您的 Unity 项目交互。这个 C# 实现使 Claude、Windsurf 和 Cursor 等 AI 代理能够在 Unity 编辑器中执行操作。
 
 <a href="https://glama.ai/mcp/servers/@CoderGamester/mcp-unity">
   <img width="400" height="200" src="https://glama.ai/mcp/servers/@CoderGamester/mcp-unity/badge" alt="Unity MCP 服务器" />
@@ -111,9 +125,7 @@ MCP Unity 通过将 Unity `Library/PackedCache` 文件夹添加到您的工作�
   > **示例提示:** "列出我 Unity 项目中所有可用的测试"
 
 ## 要求
-- Unity 2022.3 或更高版本 - 用于[安装服务器](#install-server)
-- Node.js 18 或更高版本 - 用于[启动服务器](#start-server)
-- npm 9 或更高版本 - 用于[调试服务器](#debug-server)
+- Unity 2022.3 或更高版本
 
 ## <a name="install-server"></a>安装
 
@@ -129,51 +141,16 @@ MCP Unity 通过将 Unity `Library/PackedCache` 文件夹添加到您的工作�
 >
 > 在继续安装之前，请确保您的项目位于不含空格的路径中。
 
-安装 MCP Unity 服务器是一个多步骤过程：
-
-### 步骤 1: 安装 Node.js 
-> 要运行 MCP Unity 服务器，您需要在计算机上安装 Node.js 18 或更高版本：
-
-![node](docs/node.jpg)
-
-<details>
-<summary><span style="font-size: 1.1em; font-weight: bold;">Windows</span></summary>
-
-1. 访问 [Node.js 下载页面](https://nodejs.org/en/download/)
-2. 下载 Windows 安装程序 (.msi) 的 LTS 版本（推荐）
-3. 运行安装程序并按照安装向导操作
-4. 通过打开 PowerShell 并运行以下命令验证安装：
-   ```bash
-   node --version
-   ```
-</details>
-
-<details>
-<summary><span style="font-size: 1.1em; font-weight: bold;">macOS</span></summary>
-
-1. 访问 [Node.js 下载页面](https://nodejs.org/en/download/)
-2. 下载 macOS 安装程序 (.pkg) 的 LTS 版本（推荐）
-3. 运行安装程序并按照安装向导操作
-4. 或者，如果您已安装 Homebrew，可以运行：
-   ```bash
-   brew install node@18
-   ```
-5. 通过打开终端并运行以下命令验证安装：
-   ```bash
-   node --version
-   ```
-</details>
-
-### 步骤 2: 通过 Unity 包管理器安装 Unity MCP 服务器包
+### 步骤 1: 通过 Unity 包管理器安装 Unity MCP 服务器包
 1. 打开 Unity 包管理器 (Window > Package Manager)
 2. 点击左上角的 "+" 按钮
 3. 选择 "Add package from git URL..."
-4. 输入: `https://github.com/CoderGamester/mcp-unity.git`
+4. 输入: `https://github.com/erinloy/mcp-unity.git`
 5. 点击 "Add"
 
 ![package manager](https://github.com/user-attachments/assets/a72bfca4-ae52-48e7-a876-e99c701b0497)
 
-### 步骤 3: 配置 AI LLM 客户端
+### 步骤 2: 配置 AI LLM 客户端
 
 <details open>
 <summary><span style="font-size: 1.1em; font-weight: bold;">选项 1: 使用 Unity 编辑器配置</span></summary>
@@ -193,143 +170,75 @@ MCP Unity 通过将 Unity `Library/PackedCache` 文件夹添加到您的工作�
 <details>
 <summary><span style="font-size: 1.1em; font-weight: bold;">选项 2: 手动配置</span></summary>
 
-打开您的 AI 客户端的 MCP 配置文件（例如 Claude Desktop 中的 claude_desktop_config.json）并复制以下文本：
+打开您的 AI 客户端的 MCP 配置文件（例如 Claude Desktop 中的 claude_desktop_config.json）并添加：
 
-> 将 `ABSOLUTE/PATH/TO` 替换为您的 MCP Unity 安装的绝对路径，或者直接从 Unity 编辑器 MCP 服务器窗口（Tools > MCP Unity > Server Window）复制文本。
+> 将 `ABSOLUTE/PATH/TO` 替换为您的 Unity 项目 mcp-unity 安装的绝对路径。
 
 ```json
 {
   "mcpServers": {
-    "mcp-unity": {
-      "command": "node",
-      "args": [
-        "ABSOLUTE/PATH/TO/mcp-unity/Server~/build/index.js"
-      ]
+    "unity-mcp": {
+      "command": "ABSOLUTE/PATH/TO/mcp-unity/Editor/DirectMcp/unity-mcp.exe"
     }
   }
 }
 ```
 
+服务器会自动检测 Unity 项目根目录。
+
 </details>
 
 ## <a name="start-server"></a>启动 Unity 编辑器 MCP 服务器
-1. 打开 Unity 编辑器
-2. 导航到 Tools > MCP Unity > Server Window
-3. 点击 "Start Server" 按钮以启动 WebSocket 服务器
-4. 打开 Claude Desktop 或您的 AI 编码 IDE（例如 Cursor IDE、Windsurf IDE 等）并开始执行 Unity 工具
-   
-![connect](https://github.com/user-attachments/assets/2e266a8b-8ba3-4902-b585-b220b11ab9a2)
 
-> 当 AI 客户端连接到 WebSocket 服务器时，它将自动显示在窗口的绿色框中
+1. 在您的 MCP 客户端（Claude、Cursor 等）中配置 `unity-mcp.exe` 的路径
+2. 当您的 MCP 客户端连接时，服务器会自动启动
+3. 可执行文件以批处理模式启动 Unity 来处理 MCP 请求
 
-## 可选：设置 WebSocket 端口
-默认情况下，WebSocket 服务器运行在 '8090' 端口。您可以通过两种方式更改此端口：
+## 配置
 
-1. 打开 Unity 编辑器
-2. 导航到 Tools > MCP Unity > Server Window
-3. 将 "WebSocket Port" 值更改为所需的端口号
-4. Unity 将设置系统环境变量 UNITY_PORT 为新的端口号
-5. 重启 Node.js 服务器
-6. 再次点击 "Start Server" 以重新连接 Unity 编辑器 WebSocket 到 Node.js MCP 服务器
+配置存储在 `ProjectSettings/McpUnitySettings.json` 中：
 
-## 可选：设置超时
-
-默认情况下，MCP 服务器与 WebSocket 之间的超时时间为 10 秒。
-您可以根据您使用的操作系统进行更改：
-
-1. 打开 Unity 编辑器
-2. 导航到 Tools > MCP Unity > Server Window
-3. 将 "Request Timeout (seconds)" 值更改为所需的超时秒数
-4. Unity 将设置系统环境变量 UNITY_REQUEST_TIMEOUT 为新的超时值
-5. 重启 Node.js 服务器
-6. 再次点击 "Start Server" 以重新连接 Unity 编辑器 WebSocket 到 Node.js MCP 服务器
-
-> [!TIP]  
-> 您的 AI 编码 IDE（例如 Claude Desktop、Cursor IDE、Windsurf IDE）与 MCP 服务器之间的超时时间取决于 IDE。
-
-## 可选：允许远程 MCP Bridge 连接
-
-默认情况下，WebSocket 服务器绑定到 'localhost'。要允许来自其他设备的 MCP Bridge 连接，请执行以下步骤：
-
-1. 打开 Unity 编辑器  
-2. 依次点击菜单「Tools > MCP Unity > Server Window」  
-3. 勾选"Allow Remote Connections（允许远程连接）"复选框  
-4. Unity 将 WebSocket 服务器绑定到 '0.0.0.0'（所有网络接口）  
-5. 重新启动 Node.js 服务器以应用新的主机配置  
-6. 在远程运行 MCP Bridge 时，将环境变量 UNITY_HOST 设置为 Unity 所在机器的 IP 地址：  
-   `UNITY_HOST=192.168.1.100 node server.js`
+- **自动检测**：服务器自动查找您的 Unity 项目根目录
+- **通信**：使用 stdio 协议
+- **设置**：通过配置文件管理
 
 ## <a name="debug-server"></a>调试服务器
 
 <details>
-<summary><span style="font-size: 1.1em; font-weight: bold;">构建 Node.js 服务器</span></summary>
+<summary><span style="font-size: 1.1em; font-weight: bold;">调试</span></summary>
 
-MCP Unity 服务器使用 Node.js 构建。它需要将 TypeScript 代码编译到 `build` 目录中。
-如果出现问题，您可以通过以下方式强制安装：
+服务器可以使用标准 C# 调试工具进行调试：
 
-1. 打开 Unity 编辑器
-2. 导航到 Tools > MCP Unity > Server Window
-3. 点击 "Force Install Server" 按钮
+1. **Unity 控制台**：服务器日志显示在 Unity 控制台中
+2. **C# 调试器**：使用您的 IDE 调试器在服务器代码中设置断点
+3. **编译**：C# 代码的更改由 Unity 编译
 
-![install](docs/install.jpg)
-
-如果您想手动构建，可以按照以下步骤操作：
-
-1. 打开终端/PowerShell/命令提示符
-
-2. 导航到 Server 目录：
-   ```bash
-   cd ABSOLUTE/PATH/TO/mcp-unity/Server~
-   ```
-
-3. 安装依赖：
-   ```bash
-   npm install
-   ```
-
-4. 构建服务器：
-   ```bash
-   npm run build
-   ```
-
-5. 运行服务器：
-   ```bash
-   node build/index.js
-   ```
+**调试服务器：**
+1. 在您的 C# IDE（Visual Studio、Rider 等）中打开项目
+2. 在 `Editor/DirectMcp/` 文件中设置断点
+3. 将调试器附加到 Unity
+4. 当 MCP 客户端发出请求时，服务器将触发断点
 
 </details>
    
 <details>
-<summary><span style="font-size: 1.1em; font-weight: bold;">使用 MCP Inspector 调试</span></summary>
+<summary><span style="font-size: 1.1em; font-weight: bold;">MCP Inspector</span></summary>
 
 使用 [@modelcontextprotocol/inspector](https://github.com/modelcontextprotocol/inspector) 调试服务器：
-   - Powershell
    ```powershell
-   npx @modelcontextprotocol/inspector node Server~/build/index.js
+   npx @modelcontextprotocol/inspector "path/to/unity-mcp.exe"
    ```
-   - 命令提示符/终端
-   ```cmd
-   npx @modelcontextprotocol/inspector node Server~/build/index.js
-   ```
-
-在关闭终端或使用 [MCP Inspector](https://github.com/modelcontextprotocol/inspector) 调试之前，请务必使用 `Ctrl + C` 关闭服务器。
 
 </details>
 
 <details>
-<summary><span style="font-size: 1.1em; font-weight: bold;">启用控制台日志</span></summary>
+<summary><span style="font-size: 1.1em; font-weight: bold;">日志记录</span></summary>
 
-1. 启用终端或 log.txt 文件中的日志记录：
-   - Powershell
-   ```powershell
-   $env:LOGGING = "true"
-   $env:LOGGING_FILE = "true"
-   ```
-   - 命令提示符/终端
-   ```cmd
-   set LOGGING=true
-   set LOGGING_FILE=true
-   ```
+日志自动写入：
+- Unity 控制台（在编辑器中运行时）
+- 标准错误流（作为子进程运行时）
+
+在 Unity 控制台或 MCP 客户端的调试输出中查看服务器日志。
 
 </details>
 
@@ -342,7 +251,7 @@ MCP Unity 是一个功能强大的桥梁，使用 Model Context Protocol (MCP) �
 
 本质上，MCP Unity：
 -   将 Unity 编辑器功能（如创建对象、修改组件、运行测试等）公开为 AI 可以理解和使用的“工具”和“资源”。
--   在 Unity 内部运行 WebSocket 服务器，并在 Node.js 服务器（作为 Unity 的 WebSocket 客户端）中实现 MCP。这允许 AI 助手向 Unity 发送命令并接收信息。
+-   使用 C# 实现 MCP 服务器，直接与 Unity 编辑器通信。这允许 AI 助手向 Unity 发送命令并接收信息。
 -   使您能够使用 AI 助手通过自然语言提示在 Unity 项目中执行复杂任务，从而显著加快开发工作流程。
 
 </details>
@@ -386,7 +295,7 @@ Unity 6.2 将引入新的内置 AI 工具，包括之前的 Unity Muse（用于�
 
 是的，当然可以！MCP Unity 架构的一个显著优点是其可扩展性。
 -   **在 Unity (C#) 中：** 您可以创建继承自 `McpToolBase`（或资源类似基类）的新 C# 类，以公开自定义 Unity 编辑器功能。这些工具随后将在 `McpUnityServer.cs` 中注册。例如，您可以编写一个工具来自动化您项目特有的特定资产导入管道。
--   **在 Node.js 服务器 (TypeScript) 中：** 然后您需要在 `Server/src/tools/` 目录中定义相应的 TypeScript 工具处理程序，包括其用于输入/输出的 Zod 模式，并在 `Server/src/index.ts` 中注册。此 Node.js 部分会将请求转发到 Unity 中的新 C# 工具。
+-   **在 C# 服务器中：** 您可以在 `Editor/DirectMcp/` 目录中定义新的工具处理程序，使用 C# 属性进行注册。
 
 这使您能够根据游戏或应用程序的特定需求和工作流程调整 AI 的功能。
 
@@ -408,7 +317,6 @@ Unity 6.2 将引入新的内置 AI 工具，包括之前的 Unity Muse（用于�
 -   **服务器状态：** 确保 MCP Unity 服务器正在运行。您可以在 Unity 编辑器中通过 Tools > MCP Unity > Server Window 检查其状态。
 -   **端口冲突：** 确保 MCP Unity 服务器使用的端口（默认为 8090）没有被其他应用程序占用。
 -   **防火墙：** 检查您的防火墙设置，确保它没有阻止 MCP Unity 服务器的连接。
--   **Node.js 版本：** 确保您安装了 Node.js 18 或更高版本。
 -   **MCP 客户端配置：** 确保您的 AI 客户端已正确配置为连接到 MCP Unity 服务器。检查 `mcpServers` 配置中的 `command` 和 `args` 是否正确。
 -   **日志：** 启用服务器日志以获取更多详细信息。在终端中设置 `LOGGING=true` 和 `LOGGING_FILE=true` 环境变量，然后重新启动服务器。
 

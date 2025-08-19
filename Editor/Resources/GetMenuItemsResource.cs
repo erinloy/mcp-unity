@@ -26,18 +26,31 @@ namespace McpUnity.Resources
         /// Fetch all available menu items in the Unity Editor
         /// </summary>
         /// <param name="parameters">Resource parameters as a JObject (not used)</param>
-        /// <returns>A JObject containing the list of menu items</returns>
+        /// <returns>A JObject containing the list of menu items in MCP format</returns>
         public override JObject Fetch(JObject parameters)
         {
             // Get all menu items
             JArray menuItems = GetAllMenuItems();
+            
+            // Create the content as JSON
+            var menuItemsData = new JObject
+            {
+                ["menuItems"] = menuItems,
+                ["count"] = menuItems.Count
+            };
                 
-            // Create the response
+            // Return MCP-compliant resource result format
             return new JObject
             {
-                ["success"] = true,
-                ["message"] = $"Retrieved {menuItems.Count} menu items",
-                ["menuItems"] = menuItems
+                ["contents"] = new JArray
+                {
+                    new JObject
+                    {
+                        ["uri"] = Uri,
+                        ["mimeType"] = "application/json",
+                        ["text"] = menuItemsData.ToString()
+                    }
+                }
             };
         }
         

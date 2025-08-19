@@ -48,11 +48,26 @@ namespace McpUnity.Resources
                 });
             }
             
+            // Create the content as JSON
+            var testsData = new JObject
+            {
+                ["tests"] = results,
+                ["count"] = allTests.Count,
+                ["testMode"] = testModeFilter ?? "all"
+            };
+            
+            // Return MCP-compliant resource result format
             tcs.SetResult(new JObject
             {
-                ["success"] = true,
-                ["message"] = $"Retrieved {allTests.Count} tests",
-                ["tests"] = results
+                ["contents"] = new JArray
+                {
+                    new JObject
+                    {
+                        ["uri"] = Uri.Replace("{testMode}", testModeFilter ?? "all"),
+                        ["mimeType"] = "application/json",
+                        ["text"] = testsData.ToString()
+                    }
+                }
             });
         }
     }

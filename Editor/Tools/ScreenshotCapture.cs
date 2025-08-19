@@ -157,12 +157,20 @@ namespace McpUnity.Tools
                 ScreenCapture.CaptureScreenshot(tempPath);
                 
                 // Wait for the file to be written (Unity writes it asynchronously)
-                System.Threading.Thread.Sleep(100);
+                // Try multiple times with increasing delays
+                int maxAttempts = 10;
+                for (int i = 0; i < maxAttempts; i++)
+                {
+                    System.Threading.Thread.Sleep(100);
+                    if (File.Exists(tempPath))
+                        break;
+                }
                 
                 if (!File.Exists(tempPath))
                 {
-                    Debug.LogWarning("[MCP Unity] Screenshot file was not created");
-                    return null;
+                    Debug.LogWarning("[MCP Unity] Screenshot file was not created after waiting 1 second");
+                    // Fallback: try to capture using a different method
+                    return CaptureGameViewAlternative();
                 }
 
                 // Read the file and convert to base64
@@ -189,6 +197,53 @@ namespace McpUnity.Tools
             }
         }
 
+        private static Dictionary<string, object> CaptureGameViewAlternative()
+        {
+            try
+            {
+                // Alternative method: capture the Game view using RenderTexture
+                var gameView = EditorWindow.GetWindow(System.Type.GetType("UnityEditor.GameView,UnityEditor"));
+                if (gameView == null)
+                {
+                    Debug.LogWarning("[MCP Unity] Game view is not open");
+                    return null;
+                }
+                
+                // Use reflection to get the game view's render texture
+                var gameViewType = gameView.GetType();
+                var renderTextureProperty = gameViewType.GetProperty("targetTexture", 
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                
+                if (renderTextureProperty == null)
+                {
+                    // Fallback: return a simple error placeholder
+                    return new Dictionary<string, object>
+                    {
+                        ["type"] = "game",
+                        ["data"] = "data:image/png;base64,",  // Empty image
+                        ["width"] = 0,
+                        ["height"] = 0,
+                        ["error"] = "Could not capture Game view"
+                    };
+                }
+                
+                // Return placeholder for now
+                return new Dictionary<string, object>
+                {
+                    ["type"] = "game",
+                    ["data"] = "data:image/png;base64,",  // Empty image
+                    ["width"] = 0,
+                    ["height"] = 0,
+                    ["error"] = "Game view capture requires Unity to be in Play mode or focused"
+                };
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[MCP Unity] Failed to capture Game view (alternative): {ex.Message}");
+                return null;
+            }
+        }
+        
         private static (int, int) GetPngDimensions(byte[] pngData)
         {
             // PNG dimensions are stored at bytes 16-23

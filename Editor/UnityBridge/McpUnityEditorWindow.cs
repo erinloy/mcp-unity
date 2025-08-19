@@ -157,6 +157,14 @@ namespace McpUnity.Unity
                 settings.SaveSettings();
             }
             
+            // Verbose logging toggle
+            bool verboseLogging = EditorGUILayout.Toggle(new GUIContent("Verbose Logging", "Log all MCP messages including routine polling (useful for debugging)"), settings.VerboseLogging);
+            if (verboseLogging != settings.VerboseLogging)
+            {
+                settings.VerboseLogging = verboseLogging;
+                settings.SaveSettings();
+            }
+            
             EditorGUILayout.Space();
 
             // Server control buttons
@@ -216,14 +224,6 @@ namespace McpUnity.Unity
             }
                 
             EditorGUILayout.EndVertical();
-
-            // NPM Executable Path
-            string newNpmPath = EditorGUILayout.TextField(new GUIContent("NPM Executable Path", "Optional: Full path to the npm executable (e.g., /Users/user/.asdf/shims/npm or C:\\path\\to\\npm.cmd). If not set, 'npm' from the system PATH will be used."), settings.NpmExecutablePath);
-            if (newNpmPath != settings.NpmExecutablePath)
-            {
-                settings.NpmExecutablePath = newNpmPath;
-                settings.SaveSettings();
-            }
             
             EditorGUILayout.Space();
             

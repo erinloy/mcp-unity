@@ -33,13 +33,31 @@ namespace McpUnity.Resources
                 
             // Get all assets from the project
             JArray assets = GetAllAssets(assetType, searchPattern);
+            
+            // Create the content as JSON
+            var assetsData = new JObject
+            {
+                ["assets"] = assets,
+                ["count"] = assets.Count,
+                ["filters"] = new JObject
+                {
+                    ["assetType"] = assetType ?? "all",
+                    ["searchPattern"] = searchPattern ?? ""
+                }
+            };
                 
-            // Return result
+            // Return MCP-compliant resource result format
             return new JObject
             {
-                ["success"] = true,
-                ["message"] = $"Retrieved {assets.Count} assets",
-                ["assets"] = assets
+                ["contents"] = new JArray
+                {
+                    new JObject
+                    {
+                        ["uri"] = Uri,
+                        ["mimeType"] = "application/json",
+                        ["text"] = assetsData.ToString()
+                    }
+                }
             };
         }
         

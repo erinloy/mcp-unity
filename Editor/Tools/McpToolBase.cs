@@ -20,6 +20,30 @@ namespace McpUnity.Tools
         /// Description of the tool's functionality
         /// </summary>
         public string Description { get; protected set; }
+        
+        private JObject _inputSchema;
+        
+        /// <summary>
+        /// Input schema for the tool parameters (MCP protocol)
+        /// Override this in derived classes to define expected parameters
+        /// Or use McpParameterAttribute on fields/properties for automatic generation
+        /// </summary>
+        public virtual JObject InputSchema 
+        { 
+            get
+            {
+                // If not explicitly set, try to generate from attributes
+                if (_inputSchema == null)
+                {
+                    _inputSchema = McpSchemaGenerator.GenerateSchema(this.GetType());
+                }
+                return _inputSchema;
+            }
+            protected set
+            {
+                _inputSchema = value;
+            }
+        }
 
         /// <summary>
         /// Flag indicating if the tool executes asynchronously on the main thread.

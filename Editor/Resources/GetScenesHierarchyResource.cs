@@ -25,18 +25,31 @@ public class GetScenesHierarchyResource : McpResourceBase
         /// Fetch all game objects in the Unity loaded scenes
         /// </summary>
         /// <param name="parameters">Resource parameters as a JObject (not used)</param>
-        /// <returns>A JObject containing the hierarchy of game objects</returns>
+        /// <returns>A JObject containing the hierarchy of game objects in MCP format</returns>
         public override JObject Fetch(JObject parameters)
         {
             // Get all game objects in the hierarchy
             JArray hierarchyArray = GetSceneHierarchy();
+            
+            // Create the content as JSON
+            var hierarchyData = new JObject
+            {
+                ["scenes"] = hierarchyArray,
+                ["summary"] = $"Retrieved hierarchy with {hierarchyArray.Count} loaded scenes"
+            };
                 
-            // Create the response
+            // Return MCP-compliant resource result format
             return new JObject
             {
-                ["success"] = true,
-                ["message"] = $"Retrieved hierarchy with {hierarchyArray.Count} root objects",
-                ["hierarchy"] = hierarchyArray
+                ["contents"] = new JArray
+                {
+                    new JObject
+                    {
+                        ["uri"] = Uri,
+                        ["mimeType"] = "application/json",
+                        ["text"] = hierarchyData.ToString()
+                    }
+                }
             };
         }
         

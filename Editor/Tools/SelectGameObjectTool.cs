@@ -17,6 +17,36 @@ namespace McpUnity.Tools
         {
             Name = "select_gameobject";
             Description = "Sets the selected GameObject in the Unity editor by path, name or instance ID";
+            
+            // Define the input schema for MCP protocol
+            InputSchema = new JObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JObject
+                {
+                    ["objectPath"] = new JObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Full hierarchy path to the GameObject (e.g., 'Canvas/Button')"
+                    },
+                    ["objectName"] = new JObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Name of the GameObject to select"
+                    },
+                    ["instanceId"] = new JObject
+                    {
+                        ["type"] = "integer",
+                        ["description"] = "Instance ID of the GameObject"
+                    }
+                },
+                ["oneOf"] = new JArray
+                {
+                    new JObject { ["required"] = new JArray { "objectPath" } },
+                    new JObject { ["required"] = new JArray { "objectName" } },
+                    new JObject { ["required"] = new JArray { "instanceId" } }
+                }
+            };
         }
         
         /// <summary>

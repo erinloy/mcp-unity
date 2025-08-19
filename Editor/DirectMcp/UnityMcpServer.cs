@@ -352,7 +352,7 @@ namespace McpUnity.DirectMcp
     /// </summary>
     public class UnityMcpServerWindow : EditorWindow
     {
-        [MenuItem("MCP/Direct Server Control")]
+        [MenuItem("Tools/MCP Unity/Direct Server Control")]
         public static void ShowWindow()
         {
             GetWindow<UnityMcpServerWindow>("Unity MCP Server");

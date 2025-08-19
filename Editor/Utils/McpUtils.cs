@@ -22,14 +22,23 @@ namespace McpUnity.Utils
         /// </summary>
         public static string GenerateMcpConfigJson(bool useTabsIndentation)
         {
+            // Use the C# executable instead of Node.js
+            string exePath = Path.Combine(GetServerPath(), "bin", "Release", "net8.0", "win-x64", "unity-mcp.exe");
+            
+            // Fallback to the direct exe if the full path doesn't exist
+            if (!File.Exists(exePath))
+            {
+                exePath = Path.Combine(GetServerPath(), "unity-mcp.exe");
+            }
+            
             var config = new Dictionary<string, object>
             {
                 { "mcpServers", new Dictionary<string, object>
                     {
                         { "mcp-unity", new Dictionary<string, object>
                             {
-                                { "command", "node" },
-                                { "args", new[] { Path.Combine(GetServerPath(), "build", "index.js") } }
+                                { "command", exePath },
+                                { "args", new string[] { } }  // No arguments needed for C# exe
                             }
                         }
                     }

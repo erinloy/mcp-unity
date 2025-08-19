@@ -14,6 +14,28 @@ namespace McpUnity.Tools
         {
             Name = "send_console_log";
             Description = "Sends a message to the Unity console";
+            
+            // Define the input schema for MCP protocol
+            InputSchema = new JObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JObject
+                {
+                    ["message"] = new JObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "The message to log to the Unity console"
+                    },
+                    ["logLevel"] = new JObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Log level: Info, Warning, or Error",
+                        ["enum"] = new JArray { "Info", "Warning", "Error" },
+                        ["default"] = "Info"
+                    }
+                },
+                ["required"] = new JArray { "message" }
+            };
         }
         
         /// <summary>
@@ -22,9 +44,9 @@ namespace McpUnity.Tools
         /// <param name="parameters">Tool parameters as a JObject</param>
         public override JObject Execute(JObject parameters)
         {
-            // Extract parameters
+            // Extract parameters (support both 'type' and 'logLevel' for compatibility)
             string message = parameters["message"]?.ToObject<string>();
-            string type = parameters["type"]?.ToObject<string>()?.ToLower() ?? "info";
+            string type = (parameters["logLevel"] ?? parameters["type"])?.ToObject<string>()?.ToLower() ?? "info";
  
             if (string.IsNullOrEmpty(message))
             {

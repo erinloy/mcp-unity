@@ -1,10 +1,24 @@
-# MCP Unity Editor（ゲームエンジン）
+# MCP Unity Editor - C# 実装
+
+これは MCP Unity の C# 実装で、https://github.com/CoderGamester/mcp-unity の優れた作業に基づいています。
+
+**このフォークのリポジトリ**: https://github.com/erinloy/mcp-unity
+
+## 実装の詳細
+
+- **言語**：純粋な C#
+- **サーバーの場所**：`Editor/DirectMcp/unity-mcp.exe`
+- **通信**：stdio プロトコル
+- **設定**：Unity プロジェクトルートを自動検出
+- **設定**：`ProjectSettings/McpUnitySettings.json`
+
+---
+
+# MCP Unity Editor ドキュメント
 
 [![](https://badge.mcpx.dev?status=on 'MCP 有効')](https://modelcontextprotocol.io/introduction)
 [![](https://img.shields.io/badge/Unity-000000?style=flat&logo=unity&logoColor=white 'Unity')](https://unity.com/releases/editor/archive)
-[![](https://img.shields.io/badge/Node.js-339933?style=flat&logo=nodedotjs&logoColor=white 'Node.js')](https://nodejs.org/en/download/)
-[![](https://img.shields.io/github/stars/CoderGamester/mcp-unity 'スター')](https://github.com/CoderGamester/mcp-unity/stargazers)
-[![](https://img.shields.io/github/last-commit/CoderGamester/mcp-unity '最終コミット')](https://github.com/CoderGamester/mcp-unity/commits/main)
+[![](https://img.shields.io/badge/C%23-239120?style=flat&logo=csharp&logoColor=white 'C#')](https://docs.microsoft.com/en-us/dotnet/csharp/)
 [![](https://img.shields.io/badge/License-MIT-red.svg 'MIT ライセンス')](https://opensource.org/licenses/MIT)
 
 | [英語](README.md) | [🇨🇳簡体中文](README_zh-CN.md) | [🇯🇵日本語](README-ja.md) |
@@ -41,7 +55,7 @@
      ╚═╝     ╚═╝ ╚═════╝╚═╝              ╚═════╝ ╚═╝  ╚═══╝╚═╝   ╚═╝      ╚═╝   
 ```       
 
-MCP Unityは、Unityエディター向けのModel Context Protocolの実装であり、AIアシスタントがUnityプロジェクトと対話できるようにします。このパッケージは、UnityとMCPプロトコルを実装するNode.jsサーバー間のブリッジを提供し、Claude、Windsurf、CursorなどのAIエージェントがUnityエディター内で操作を実行できるようにします。
+MCP Unityは、Unityエディター向けのModel Context Protocolの実装であり、AIアシスタントがUnityプロジェクトと対話できるようにします。このC#実装により、Claude、Windsurf、CursorなどのAIエージェントがUnityエディター内で操作を実行できるようになります。
 
 <a href="https://glama.ai/mcp/servers/@CoderGamester/mcp-unity">
   <img width="400" height="200" src="https://glama.ai/mcp/servers/@CoderGamester/mcp-unity/badge" alt="Unity MCPサーバー" />
@@ -110,9 +124,7 @@ MCP Unityは、Unityの`Library/PackedCache`フォルダーをワークスペー
   > **例:** "プロジェクトで利用可能なすべてのテストをリスト"
 
 ## 要件
-- Unity 2022.3以降 - [サーバーをインストール](#install-server)するため
-- Node.js 18以降 - [サーバーを起動](#start-server)するため
-- npm 9以降 - [サーバーをデバッグ](#debug-server)するため
+- Unity 2022.3以降
 
 ## <a name="install-server"></a>インストール
 
@@ -128,51 +140,17 @@ MCP Unityは、Unityの`Library/PackedCache`フォルダーをワークスペー
 >
 > インストールを進める前に、プロジェクトがスペースを含まないパスにあることを確認してください。
 
-このMCP Unityサーバーのインストールは複数ステップのプロセスです：
 
-### ステップ1: Node.jsをインストール
-> MCP Unityサーバーを実行するには、コンピューターにNode.js 18以降がインストールされている必要があります：
-
-![node](docs/node.jpg)
-
-<details>
-<summary><span style="font-size: 1.1em; font-weight: bold;">Windows</span></summary>
-
-1. [Node.jsダウンロードページ](https://nodejs.org/en/download/)にアクセス
-2. LTSバージョンのWindowsインストーラー（.msi）をダウンロード（推奨）
-3. インストーラーを実行し、インストールウィザードに従う
-4. PowerShellを開いて以下を実行してインストールを確認：
-   ```bash
-   node --version
-   ```
-</details>
-
-<details>
-<summary><span style="font-size: 1.1em; font-weight: bold;">macOS</span></summary>
-
-1. [Node.jsダウンロードページ](https://nodejs.org/en/download/)にアクセス
-2. LTSバージョンのmacOSインストーラー（.pkg）をダウンロード（推奨）
-3. インストーラーを実行し、インストールウィザードに従う
-4. または、Homebrewがインストールされている場合は以下を実行：
-   ```bash
-   brew install node@18
-   ```
-5. ターミナルを開いて以下を実行してインストールを確認：
-   ```bash
-   node --version
-   ```
-</details>
-
-### ステップ2: Unityパッケージマネージャー経由でUnity MCPサーバーパッケージをインストール
+### ステップ1: Unityパッケージマネージャー経由でUnity MCPサーバーパッケージをインストール
 1. Unityパッケージマネージャーを開く（Window > Package Manager）
 2. 左上隅の"+"ボタンをクリック
 3. "Add package from git URL..."を選択
-4. 入力: `https://github.com/CoderGamester/mcp-unity.git`
+4. 入力: `https://github.com/erinloy/mcp-unity.git`
 5. "Add"をクリック
 
 ![package manager](https://github.com/user-attachments/assets/a72bfca4-ae52-48e7-a876-e99c701b0497)
 
-### ステップ3: AI LLMクライアントを設定
+### ステップ2: AI LLMクライアントを設定
 
 <details open>
 <summary><span style="font-size: 1.1em; font-weight: bold;">オプション1: Unityエディターを使用して設定</span></summary>
@@ -192,83 +170,37 @@ MCP Unityは、Unityの`Library/PackedCache`フォルダーをワークスペー
 <details>
 <summary><span style="font-size: 1.1em; font-weight: bold;">オプション2: 手動設定</span></summary>
 
-AIクライアントのMCP設定ファイル（例：Claude Desktopのclaude_desktop_config.json）を開き、以下のテキストをコピー：
+AIクライアントのMCP設定ファイル（例：Claude Desktopのclaude_desktop_config.json）を開き、以下を追加：
 
-> `ABSOLUTE/PATH/TO`をMCP Unityインストールの絶対パスに置き換えるか、UnityエディターMCPサーバーウィンドウ（Tools > MCP Unity > Server Window）からテキストをコピー
+> `ABSOLUTE/PATH/TO`をUnityプロジェクトのmcp-unityインストールの絶対パスに置き換えます。
 
 ```json
 {
   "mcpServers": {
-    "mcp-unity": {
-      "command": "node",
-      "args": [
-        "ABSOLUTE/PATH/TO/mcp-unity/Server~/build/index.js"
-      ]
+    "unity-mcp": {
+      "command": "ABSOLUTE/PATH/TO/mcp-unity/Editor/DirectMcp/unity-mcp.exe"
     }
   }
 }
 ```
 
+サーバーはUnityプロジェクトルートを自動的に検出します。
+
 </details>
 
 ## <a name="start-server"></a>サーバーの起動
 
-MCP Unityサーバーを起動するには2つの方法があります：
+1. MCPクライアント（Claude、Cursorなど）で`unity-mcp.exe`のパスを設定
+2. MCPクライアントが接続すると、サーバーが自動的に起動
+3. 実行可能ファイルはバッチモードでUnityを起動してMCPリクエストを処理
 
-## オプション: Node.jsサーバーのインストール
-デフォルトでは、Node.jsサーバーは `Server~/` ディレクトリにインストールされます。
-問題が発生した場合は、以下の手順で強制的にインストールできます：
+## 設定
 
-1. Unityエディターを開く
-2. メニューから Tools > MCP Unity > Server Window に移動
-3. 「Force Install Server」ボタンをクリック
+設定は `ProjectSettings/McpUnitySettings.json` に保存されます：
 
-> [!TIP]
-> Node.js サーバーは `Server~/` ディレクトリにインストールされます。
-
-
-### オプション1: Unityエディター経由で起動
-1. Unityエディターを開く
-2. Tools > MCP Unity > Server Windowに移動
-3. "Start Server"ボタンをクリック
-4. Open Claude Desktop or your AI Coding IDE (e.g. Cursor IDE, Windsurf IDE, etc.) and start executing Unity tools
-   
-![connect](https://github.com/user-attachments/assets/2e266a8b-8ba3-4902-b585-b220b11ab9a2)
-
-### オプション2: コマンドラインから起動
-1. ターミナルまたはコマンドプロンプトを開く
-2. MCP Unityサーバーディレクトリに移動
-3. 以下のコマンドを実行：
-   ```bash
-   node Server~/build/index.js
-   ```
-
-## オプション: タイムアウト設定
-
-デフォルトでは、MCPサーバーとWebSocket間のタイムアウトは 10 秒です。
-お使いの環境に応じて以下の手順で変更できます：
-
-1. Unityエディターを開く  
-2. **Tools > MCP Unity > Server Window** に移動  
-3. **Request Timeout (seconds)** の値を希望のタイムアウト秒数に変更  
-4. Unityが環境変数 `UNITY_REQUEST_TIMEOUT` に新しい値を設定  
-5. Node.jsサーバーを再起動  
-6. **Start Server** を再度クリックして再接続  
-
-> [!TIP]  
-> AIコーディングIDE（Claude Desktop、Cursor IDE、Windsurf IDEなど）とMCPサーバー間のタイムアウトは、使用するIDEによって異なる場合があります。
-
-## オプション：リモート MCP ブリッジ接続を許可する
-
-デフォルトでは、WebSocket サーバーは 'localhost' にバインドされています。他のマシンから MCP ブリッジ接続を許可するには、以下の手順に従ってください：
-
-1. Unity エディターを開く  
-2. メニューから「Tools > MCP Unity > Server Window」を選択  
-3. 「Allow Remote Connections（リモート接続を許可）」チェックボックスを有効にする  
-4. Unity は WebSocket サーバーを '0.0.0.0'（すべてのインターフェース）にバインドします  
-5. Node.js サーバーを再起動して新しいホスト設定を適用する  
-6. リモートで MCP ブリッジを実行する場合は、環境変数 UNITY_HOST を Unity 実行マシンの IP アドレスに設定して起動：  
-   `UNITY_HOST=192.168.1.100 node server.js`
+- **自動検出**：サーバーはUnityプロジェクトルートを自動的に検出
+- **通信**：stdioプロトコルを使用
+- **設定**：設定ファイルで管理
 
 ## サポート & フィードバック
 
@@ -291,8 +223,6 @@ MCP Unityサーバーを起動するには2つの方法があります：
 
 - Model Context Protocol
 - Unity Technologies
-- Node.js
-- WebSocket-Sharp
 
 ## よくある質問
 
@@ -303,7 +233,7 @@ MCP Unityは、Model Context Protocol（MCP）を使用して、Unityエディ�
 
 本質的に、MCP Unityは次のことを行います。
 -   Unityエディターの機能（オブジェクトの作成、コンポーネントの変更、テストの実行など）を、AIが理解して使用できる「ツール」および「リソース」として公開します。
--   Unity内にWebSocketサーバーを、そしてMCPを実装するNode.jsサーバー（UnityへのWebSocketクライアントとして機能）を実行します。これにより、AIアシスタントはUnityにコマンドを送信し、情報を受け取ることができます。
+-   C#でMCPサーバーを実装し、Unityエディターと直接通信します。これにより、AIアシスタントはUnityにコマンドを送信し、情報を受け取ることができます。
 -   AIアシスタントとの自然言語プロンプトを使用して、Unityプロジェクト内で複雑なタスクを実行できるようにし、開発ワークフローを大幅に加速します。
 
 </details>
@@ -359,7 +289,7 @@ MCP Unityは、MCPクライアントとして機能できるAIアシスタント
 
 はい、もちろんです！MCP Unityアーキテクチャの重要な利点の1つは、その拡張性です。
 -   **Unity内（C#）:** `McpToolBase`（またはリソースの同様のベース）を継承する新しいC#クラスを作成して、カスタムUnityエディター機能を公開できます。これらのツールは、`McpUnityServer.cs`に登録されます。たとえば、プロジェクト固有のアセットインポートパイプラインを自動化するツールを作成できます。
--   **Node.jsサーバー内（TypeScript）:** 次に、`Server/src/tools/`ディレクトリに対応するTypeScriptツールハンドラーを定義し、入力/出力のZodスキーマを含め、`Server/src/index.ts`に登録します。このNode.js部分は、新しいC#ツールへのリクエストをUnityに転送します。
+-   **C#サーバー内：** `Editor/DirectMcp/`ディレクトリで新しいツールハンドラーを定義し、C#属性を使用して登録できます。
 
 これにより、AIの機能をゲームやアプリケーションの特定のニーズとワークフローに合わせて調整できます。
 

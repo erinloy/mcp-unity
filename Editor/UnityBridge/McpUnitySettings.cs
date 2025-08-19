@@ -39,6 +39,9 @@ namespace McpUnity.Unity
         
         [Tooltip("Allow connections from remote MCP bridges. When disabled, only localhost connections are allowed (default).")]
         public bool AllowRemoteConnections = false;
+        
+        [Tooltip("Enable verbose logging of all MCP messages (including routine polling). Useful for debugging.")]
+        public bool VerboseLogging = false;
 
         /// <summary>
         /// Singleton instance of settings

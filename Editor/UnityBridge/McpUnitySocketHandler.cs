@@ -58,7 +58,14 @@ namespace McpUnity.Unity
         {
             try
             {
-                McpLogger.LogInfo($"WebSocket message received: {e.Data}");
+                // Only log if verbose logging is enabled or if it's not a routine message
+                var data = e.Data;
+                bool isRoutineMessage = data.Contains("tools/list") || data.Contains("resources/list");
+                
+                if (McpUnitySettings.Instance.VerboseLogging || !isRoutineMessage)
+                {
+                    McpLogger.LogInfo($"WebSocket message received: {e.Data}");
+                }
                 JObject requestJson;
                 try
                 {
@@ -82,7 +89,79 @@ namespace McpUnity.Unity
                 {
                     tcs.SetResult(CreateErrorResponse("Missing method in request", "invalid_request"));
                 }
-                // Handle discovery methods
+                // Handle standard MCP protocol methods
+                else if (method == "tools/list")
+                {
+                    var toolsResult = new JObject
+                    {
+                        ["tools"] = new JArray(
+                            _server.GetTools().Values.Select(tool => new JObject
+                            {
+                                ["name"] = tool.Name,
+                                ["description"] = tool.Description,
+                                ["inputSchema"] = tool.InputSchema
+                            })
+                        )
+                    };
+                    tcs.SetResult(toolsResult);
+                }
+                else if (method == "resources/list" || method == "resource/list") // Support both singular and plural
+                {
+                    var resourcesResult = new JObject
+                    {
+                        ["resources"] = new JArray(
+                            _server.GetResources().Values.Select(resource => new JObject
+                            {
+                                ["uri"] = resource.Uri,
+                                ["name"] = resource.Name,
+                                ["description"] = resource.Description,
+                                ["mimeType"] = "text/plain"
+                            })
+                        )
+                    };
+                    tcs.SetResult(resourcesResult);
+                }
+                else if (method == "resources/read" || method == "resource/read") // Support both singular and plural
+                {
+                    var uri = parameters["uri"]?.ToString();
+                    if (string.IsNullOrEmpty(uri))
+                    {
+                        tcs.SetResult(CreateErrorResponse("Missing uri parameter", "invalid_params"));
+                    }
+                    else if (_server.TryGetResource(uri, out var resource))
+                    {
+                        EditorCoroutineUtility.StartCoroutineOwnerless(FetchResourceCoroutine(resource, parameters, tcs));
+                    }
+                    else
+                    {
+                        tcs.SetResult(CreateErrorResponse($"Resource not found: {uri}", "resource_not_found"));
+                    }
+                }
+                else if (method == "tools/call")
+                {
+                    var name = parameters["name"]?.ToString();
+                    var arguments = parameters["arguments"] as JObject ?? new JObject();
+                    
+                    if (string.IsNullOrEmpty(name))
+                    {
+                        tcs.SetResult(CreateErrorResponse("Missing name parameter", "invalid_params"));
+                    }
+                    else if (_server.TryGetTool(name, out var tool))
+                    {
+                        // Convert arguments format for tool execution
+                        var toolParams = new JObject();
+                        foreach (var arg in arguments)
+                        {
+                            toolParams[arg.Key] = arg.Value;
+                        }
+                        EditorCoroutineUtility.StartCoroutineOwnerless(ExecuteTool(tool, toolParams, tcs));
+                    }
+                    else
+                    {
+                        tcs.SetResult(CreateErrorResponse($"Tool not found: {name}", "tool_not_found"));
+                    }
+                }
+                // Handle discovery methods (legacy support)
                 else if (method == "rpc.discover")
                 {
                     var openRpcDoc = OpenRpcDiscovery.GenerateOpenRpcDocument(
@@ -93,7 +172,7 @@ namespace McpUnity.Unity
                 }
                 else if (method == "system.listMethods")
                 {
-                    var methods = new List<string> { "rpc.discover", "system.listMethods", "system.methodSignature" };
+                    var methods = new List<string> { "rpc.discover", "system.listMethods", "system.methodSignature", "tools/list", "tools/call", "resources/list", "resources/read" };
                     methods.AddRange(_server.GetTools().Keys);
                     methods.AddRange(_server.GetResources().Keys);
                     tcs.SetResult(JObject.FromObject(methods));
@@ -128,7 +207,16 @@ namespace McpUnity.Unity
                 JObject jsonRpcResponse = CreateResponse(requestId, responseJson);
                 string responseStr = jsonRpcResponse.ToString(Formatting.None);
                 
-                McpLogger.LogInfo($"WebSocket message response for request ID '{requestId}': {responseStr}");
+                // Log based on verbose logging setting and message type
+                bool isRoutineRequest = method == "tools/list" || method == "resources/list" || method == "resource/list";
+                bool shouldLog = McpUnitySettings.Instance.VerboseLogging || 
+                                responseJson.ContainsKey("error") || 
+                                !isRoutineRequest;
+                
+                if (shouldLog)
+                {
+                    McpLogger.LogInfo($"WebSocket message response for request ID '{requestId}': {responseStr}");
+                }
                 
                 // Send the response back to the client
                 Send(responseStr);
@@ -147,17 +235,17 @@ namespace McpUnity.Unity
         protected override void OnOpen()
         {
             // Extract client name from the X-Client-Name header
-            string clientName = "";
+            string clientName = "MCP Client";
             NameValueCollection headers = Context.Headers;
             if (headers != null && headers.Contains("X-Client-Name"))
             {
                 clientName = headers["X-Client-Name"];
-                
-                // Add the client name on the server
-                _server.Clients.Add(ID, clientName);
             }
             
-            McpLogger.LogInfo($"WebSocket client '{clientName}' connected");
+            // Add the client to the server (always track, even without header)
+            _server.Clients.Add(ID, clientName);
+            
+            McpLogger.LogInfo($"WebSocket client '{clientName}' connected (ID: {ID})");
         }
         
         /// <summary>
