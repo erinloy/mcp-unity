@@ -1,1 +1,0 @@
-Z:\SOURCE\Ziltch\___\src\Ziltch\Ziltch.Unity\Assets\mcp-unity\Server~\bin\Release\net8.0\win-x64\publish\unity-mcp.exe
