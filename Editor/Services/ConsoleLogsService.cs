@@ -31,6 +31,8 @@ namespace McpUnity.Services
         
         // Constants for log management
         private const int MaxLogEntries = 1000;
+        private const int MaxStackTraceLength = 2000; // Limit stack trace length to prevent memory issues
+        private const int MaxMessageLength = 1000; // Limit message length
         private const int CleanupThreshold = 200; // Remove oldest entries when exceeding max
         
         // Collection to store all log messages
@@ -237,6 +239,17 @@ namespace McpUnity.Services
         /// <param name="type">The log type</param>
         private void OnLogMessageReceived(string logString, string stackTrace, LogType type)
         {
+            // Truncate message and stack trace to prevent memory issues
+            if (logString != null && logString.Length > MaxMessageLength)
+            {
+                logString = logString.Substring(0, MaxMessageLength) + "... [truncated]";
+            }
+            
+            if (stackTrace != null && stackTrace.Length > MaxStackTraceLength)
+            {
+                stackTrace = stackTrace.Substring(0, MaxStackTraceLength) + "\n... [truncated]";
+            }
+            
             // Add the log entry to our collection
             lock (_logEntries)
             {

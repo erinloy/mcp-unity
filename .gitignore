@@ -118,6 +118,9 @@ log.txt
 log.txt.meta
 Server~/build/*
 Server~/node_modules/*
+Server~/bin/
+Server~/obj/
+Server~/test-*.log
 .bmad-core/
 .windsurf/
 
