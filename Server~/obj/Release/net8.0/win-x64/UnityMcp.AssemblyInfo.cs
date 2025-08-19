@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("unity-mcp")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0-unity+ea0ddfc41022ff67b57a5615c7eec562954cbe8e")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0-unity+73c0204b939959723943c57d79704e620939f5fd")]
 [assembly: System.Reflection.AssemblyProductAttribute("unity-mcp")]
 [assembly: System.Reflection.AssemblyTitleAttribute("unity-mcp")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

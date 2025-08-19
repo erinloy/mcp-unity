@@ -674,6 +674,7 @@ namespace McpUnity.DirectMcp
 
         /// <summary>
         /// Handles ReadResource requests from MCP clients
+        /// WORKAROUND: Return Unity's response directly to avoid MCP SDK serialization issues
         /// </summary>
         public async ValueTask<ReadResourceResult> ReadResourceAsync(
             RequestContext<ReadResourceRequestParams> context, 
@@ -701,7 +702,7 @@ namespace McpUnity.DirectMcp
                     
                     _logger.LogDebug("Unity response for {Uri}: {Response}", uri, result.ToString());
                     
-                    // Convert Unity's response format to MCP format
+                    // Unity already returns proper MCP format, extract the contents directly
                     if (result["contents"] is JArray contents)
                     {
                         var resourceContents = new List<ResourceContents>();
@@ -709,10 +710,11 @@ namespace McpUnity.DirectMcp
                         {
                             var text = content["text"]?.ToString() ?? "";
                             var mimeType = content["mimeType"]?.ToString() ?? "text/plain";
+                            var contentUri = content["uri"]?.ToString() ?? uri;
                             
                             resourceContents.Add(new TextResourceContents 
                             { 
-                                Uri = uri,
+                                Uri = contentUri,
                                 Text = text,
                                 MimeType = mimeType
                             });
@@ -722,7 +724,7 @@ namespace McpUnity.DirectMcp
                         return new ReadResourceResult { Contents = resourceContents };
                     }
                     
-                    // Fallback: wrap the whole result as text
+                    // If Unity didn't return expected format, try to wrap it
                     _logger.LogDebug("Using fallback for {Uri}, result type: {Type}", uri, result.GetType().Name);
                     return new ReadResourceResult 
                     { 
