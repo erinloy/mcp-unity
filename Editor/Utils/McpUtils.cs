@@ -170,6 +170,38 @@ namespace McpUnity.Utils
         }
 
         /// <summary>
+        /// Ensures the C# MCP server is built and available
+        /// </summary>
+        /// <returns>True if the server executable exists or was successfully built</returns>
+        public static bool EnsureCSharpServerBuilt()
+        {
+            string serverPath = GetServerPath();
+            string exePath = Path.Combine(serverPath, "bin", "Release", "net8.0", "win-x64", "unity-mcp.exe");
+            
+            // Check if already built
+            if (File.Exists(exePath))
+            {
+                McpLogger.LogInfo($"[MCP] C# server already built at: {exePath}");
+                return true;
+            }
+            
+            // Fallback to direct exe location
+            exePath = Path.Combine(serverPath, "unity-mcp.exe");
+            if (File.Exists(exePath))
+            {
+                McpLogger.LogInfo($"[MCP] C# server found at: {exePath}");
+                return true;
+            }
+            
+            McpLogger.LogWarning($"[MCP] C# server executable not found. Expected at: {exePath}");
+            McpLogger.LogInfo("[MCP] Please build the server manually using: dotnet build --configuration Release in the Server~ directory");
+            
+            // Could attempt to build here, but that requires dotnet CLI to be available
+            // For now, just return false and let the user build manually
+            return false;
+        }
+
+        /// <summary>
         /// Adds the MCP configuration to the Windsurf MCP config file
         /// </summary>
         public static bool AddToWindsurfIdeConfig(bool useTabsIndentation)

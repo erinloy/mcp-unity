@@ -69,9 +69,14 @@ namespace McpUnity.Notifications
                     if (server != null && server.IsListening)
                     {
                         // Push notification through WebSocket to MCP clients
-                        server.PushNotification(notification);
+                        bool sent = server.PushNotification(notification);
                         
-                        if (DevelopmentMode.Settings.VerboseLogging)
+                        if (!sent)
+                        {
+                            // No connected clients or service not ready - queue for later
+                            QueueNotification(notification);
+                        }
+                        else if (DevelopmentMode.Settings.VerboseLogging)
                         {
                             McpLogger.LogInfo($"[Notifications] Pushed: {notification["method"]}");
                         }

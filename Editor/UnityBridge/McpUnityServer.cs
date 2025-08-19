@@ -4,6 +4,7 @@ using System.Threading;
 using UnityEngine;
 using UnityEditor;
 using McpUnity.Tools;
+using McpUnity.Tools.Attributes;
 using McpUnity.Resources;
 using McpUnity.Services;
 using McpUnity.Utils;
@@ -125,12 +126,28 @@ namespace McpUnity.Unity
 
             try
             {
-                var host = McpUnitySettings.Instance.AllowRemoteConnections ? "0.0.0.0" : "localhost";
+                // Always use 127.0.0.1 for now - WebSocketSharp has issues with 0.0.0.0 binding
+                var host = "127.0.0.1";
                 _webSocketServer = new WebSocketServer($"ws://{host}:{McpUnitySettings.Instance.Port}");
                 _webSocketServer.ReuseAddress = true;
+                _webSocketServer.Log.Level = WebSocketSharp.LogLevel.Debug;
+                _webSocketServer.Log.Output = (data, path) => {
+                    McpLogger.LogInfo($"[WebSocketSharp] {data.Message}");
+                };
                 _webSocketServer.AddWebSocketService("/McpUnity", () => new McpUnitySocketHandler(this));
                 _webSocketServer.Start();
-                McpLogger.LogInfo($"WebSocket server started successfully on {host}:{McpUnitySettings.Instance.Port}.");
+                
+                // Verify the server is actually listening
+                if (_webSocketServer.IsListening)
+                {
+                    McpLogger.LogInfo($"✅ WebSocket server verified listening on {host}:{McpUnitySettings.Instance.Port}");
+                    McpLogger.LogInfo($"   Endpoint: ws://{host}:{McpUnitySettings.Instance.Port}/McpUnity");
+                }
+                else
+                {
+                    McpLogger.LogError($"WebSocket server failed to start listening on {host}:{McpUnitySettings.Instance.Port}");
+                    throw new System.InvalidOperationException("WebSocket server is not listening after Start() call");
+                }
                 
                 // Register with service discovery
                 ServiceDiscovery.RegisterService(McpUnitySettings.Instance.Port);
@@ -397,6 +414,73 @@ namespace McpUnity.Unity
                         Instance.StartServer();
                     }
                     break;
+            }
+        }
+
+        /// <summary>
+        /// Refreshes the list of attributed tools by scanning for McpToolAttribute annotations
+        /// </summary>
+        public void RefreshAttributedTools()
+        {
+            McpLogger.LogInfo("Refreshing attributed tools...");
+            
+            // Clear existing attributed tools (preserve manually registered ones)
+            var attributedToolKeys = new List<string>();
+            foreach (var kvp in _tools)
+            {
+                if (kvp.Value.GetType().GetCustomAttributes(typeof(McpToolAttribute), false).Length > 0)
+                {
+                    attributedToolKeys.Add(kvp.Key);
+                }
+            }
+            
+            foreach (var key in attributedToolKeys)
+            {
+                _tools.Remove(key);
+            }
+            
+            // Re-register attributed tools
+            RegisterTools();
+            
+            McpLogger.LogInfo($"Attributed tools refreshed. Total tools: {_tools.Count}");
+        }
+
+        /// <summary>
+        /// Pushes a notification to connected MCP clients
+        /// </summary>
+        /// <param name="notification">The notification to send</param>
+        /// <returns>True if notification was sent successfully</returns>
+        public bool PushNotification(object notification)
+        {
+            if (_webSocketServer == null || !IsListening)
+            {
+                // Don't log warnings for expected conditions - just return false
+                return false;
+            }
+            
+            // Get the WebSocket service behavior
+            var servicePath = "/McpUnity";
+            if (_webSocketServer.WebSocketServices.TryGetServiceHost(servicePath, out var host))
+            {
+                if (host.Sessions.Count == 0)
+                {
+                    // No connected clients - this is normal, not an error
+                    return false;
+                }
+                
+                var json = Newtonsoft.Json.JsonConvert.SerializeObject(notification);
+                host.Sessions.Broadcast(json);
+                
+                if (DevelopmentMode.Settings.VerboseLogging)
+                {
+                    McpLogger.LogInfo($"Notification sent to {host.Sessions.Count} connected clients");
+                }
+                return true;
+            }
+            else
+            {
+                // Service not found - this shouldn't happen but don't spam logs
+                return false;
             }
         }
     }
