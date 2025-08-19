@@ -121,6 +121,3 @@ Server~/node_modules/*
 .bmad-core/
 .windsurf/
 
-# DirectMcp build artifacts
-Editor/DirectMcp/bin/
-Editor/DirectMcp/obj/
