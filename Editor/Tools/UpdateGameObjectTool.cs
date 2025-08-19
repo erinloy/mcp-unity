@@ -50,11 +50,7 @@ namespace McpUnity.Tools
                         }
                     }
                 },
-                ["oneOf"] = new JArray
-                {
-                    new JObject { ["required"] = new JArray { "instanceId" } },
-                    new JObject { ["required"] = new JArray { "objectPath" } }
-                }
+                ["description"] = "Provide either instanceId or objectPath to identify the GameObject, plus gameObjectData with properties to update"
             };
         }
 

@@ -40,6 +40,7 @@ namespace McpUnity.DirectMcp
             {
                 options.LogToStandardErrorThreshold = LogLevel.Trace;
             });
+            builder.Logging.SetMinimumLevel(LogLevel.Trace); // Enable full MCP SDK trace logging
 
             // Register Unity bridge service
             builder.Services.AddSingleton<UnityBridge>();
@@ -700,35 +701,79 @@ namespace McpUnity.DirectMcp
                 {
                     var result = response["result"];
                     
-                    _logger.LogDebug("Unity response for {Uri}: {Response}", uri, result.ToString());
+                    _logger.LogInformation("=== UNITY RESPONSE DEBUG ===");
+                    _logger.LogInformation("URI: {Uri}", uri);
+                    _logger.LogInformation("Raw Response JSON: {Json}", response.ToString());
+                    _logger.LogInformation("Result Type: {Type}", result.GetType().Name);
+                    _logger.LogInformation("Result JSON: {Json}", result.ToString());
                     
-                    // Unity already returns proper MCP format, extract the contents directly
-                    if (result["contents"] is JArray contents)
+                    // Check contents array structure
+                    if (result["contents"] is JArray debugContentsArray)
+                    {
+                        _logger.LogInformation("Contents array length: {Length}", debugContentsArray.Count);
+                        for (int i = 0; i < debugContentsArray.Count; i++)
+                        {
+                            var item = debugContentsArray[i];
+                            _logger.LogInformation("Content[{Index}]: {Item}", i, item.ToString());
+                            var textValue = item["text"];
+                            _logger.LogInformation("Text value type: {Type}, value: {Value}", 
+                                textValue?.GetType().Name ?? "null", 
+                                textValue?.ToString() ?? "null");
+                        }
+                    }
+                    _logger.LogInformation("=== END DEBUG ===");
+                    
+                    // Unity returns proper MCP ReadResourceResult format - use it directly!
+                    // The MCP SDK will handle proper serialization to JSON-RPC response
+                    if (result["contents"] is JArray contentsArray && contentsArray.Count > 0)
                     {
                         var resourceContents = new List<ResourceContents>();
-                        foreach (var content in contents)
+                        
+                        foreach (var contentItem in contentsArray)
                         {
-                            var text = content["text"]?.ToString() ?? "";
-                            var mimeType = content["mimeType"]?.ToString() ?? "text/plain";
-                            var contentUri = content["uri"]?.ToString() ?? uri;
+                            var contentUri = contentItem["uri"]?.ToString() ?? context.Params!.Uri;
+                            var mimeType = contentItem["mimeType"]?.ToString() ?? "text/plain";
+                            
+                            // Extract the actual text content - handle both string and object types
+                            string text = "";
+                            var textToken = contentItem["text"];
+                            if (textToken != null)
+                            {
+                                if (textToken.Type == JTokenType.String)
+                                {
+                                    text = textToken.ToString();
+                                }
+                                else if (textToken.Type == JTokenType.Object || textToken.Type == JTokenType.Array)
+                                {
+                                    // If Unity returned a complex object, serialize it to JSON
+                                    text = textToken.ToString(Formatting.None);
+                                }
+                                else
+                                {
+                                    text = textToken.ToString();
+                                }
+                            }
+                            
+                            _logger.LogInformation("Content item - URI: {Uri}, MimeType: {MimeType}, Text preview: {Text}", 
+                                contentUri, mimeType, text.Length > 100 ? text.Substring(0, 100) + "..." : text);
                             
                             resourceContents.Add(new TextResourceContents 
                             { 
                                 Uri = contentUri,
-                                Text = text,
-                                MimeType = mimeType
+                                MimeType = mimeType,
+                                Text = text
                             });
                         }
                         
-                        _logger.LogDebug("Created {Count} resource contents for {Uri}", resourceContents.Count, uri);
+                        _logger.LogInformation("Successfully created ReadResourceResult with {Count} contents", resourceContents.Count);
                         return new ReadResourceResult { Contents = resourceContents };
                     }
                     
-                    // If Unity didn't return expected format, try to wrap it
-                    _logger.LogDebug("Using fallback for {Uri}, result type: {Type}", uri, result.GetType().Name);
+                    // If we get here, Unity returned an unexpected format
+                    _logger.LogWarning("Unity returned unexpected response format for {Uri}: {Result}", uri, result.ToString());
                     return new ReadResourceResult 
                     { 
-                        Contents = [new TextResourceContents { Uri = uri, Text = result.ToString(), MimeType = "application/json" }] 
+                        Contents = [new TextResourceContents { Uri = uri, Text = "Unity returned unexpected response format", MimeType = "text/plain" }] 
                     };
                 }
                 
@@ -909,28 +954,59 @@ namespace McpUnity.DirectMcp
             var currentDir = Directory.GetCurrentDirectory();
             var exePath = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule?.FileName);
             
-            var dirsToCheck = new List<string> { currentDir };
-            if (!string.IsNullOrEmpty(exePath))
+            // First check if we're already in a Unity project
+            if (IsUnityProject(currentDir))
             {
-                dirsToCheck.Add(exePath);
+                _logger.LogInformation("Found Unity project at current directory: {Path}", currentDir);
+                return currentDir;
             }
             
-            foreach (var startDir in dirsToCheck)
+            // For the Unity MCP server, we know it's typically at:
+            // Assets/mcp-unity/Server~/bin/Release/net8.0/win-x64/unity-mcp.exe
+            // So we need to go up 8 directories from the exe path
+            if (!string.IsNullOrEmpty(exePath))
             {
-                var dir = startDir;
-                for (int i = 0; i < 10; i++)
+                var dir = exePath;
+                _logger.LogDebug("Starting Unity project search from exe path: {Path}", dir);
+                
+                // Try up to 15 levels to be safe (was 10, now increased)
+                for (int i = 0; i < 15; i++)
                 {
+                    _logger.LogDebug("Checking directory level {Level}: {Path}", i, dir);
+                    
                     if (IsUnityProject(dir))
                     {
+                        _logger.LogInformation("Found Unity project at: {Path} (level {Level} from exe)", dir, i);
                         return dir;
                     }
                     
                     var parent = Directory.GetParent(dir);
-                    if (parent == null) break;
+                    if (parent == null) 
+                    {
+                        _logger.LogDebug("Reached root directory without finding Unity project");
+                        break;
+                    }
                     dir = parent.FullName;
                 }
             }
             
+            // Also check from current directory upwards
+            var currentDirSearch = currentDir;
+            _logger.LogDebug("Starting Unity project search from current directory: {Path}", currentDirSearch);
+            for (int i = 0; i < 15; i++)
+            {
+                if (IsUnityProject(currentDirSearch))
+                {
+                    _logger.LogInformation("Found Unity project at: {Path} (level {Level} from current dir)", currentDirSearch, i);
+                    return currentDirSearch;
+                }
+                
+                var parent = Directory.GetParent(currentDirSearch);
+                if (parent == null) break;
+                currentDirSearch = parent.FullName;
+            }
+            
+            _logger.LogError("Could not find Unity project. Searched from exe path: {ExePath} and current dir: {CurrentDir}", exePath, currentDir);
             return null;
         }
 

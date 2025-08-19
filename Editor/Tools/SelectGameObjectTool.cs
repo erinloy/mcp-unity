@@ -40,12 +40,7 @@ namespace McpUnity.Tools
                         ["description"] = "Instance ID of the GameObject"
                     }
                 },
-                ["oneOf"] = new JArray
-                {
-                    new JObject { ["required"] = new JArray { "objectPath" } },
-                    new JObject { ["required"] = new JArray { "objectName" } },
-                    new JObject { ["required"] = new JArray { "instanceId" } }
-                }
+                ["description"] = "Provide either objectPath, objectName, or instanceId to select a GameObject"
             };
         }
         
