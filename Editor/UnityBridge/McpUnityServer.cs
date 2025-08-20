@@ -223,8 +223,7 @@ namespace McpUnity.Unity
         }
 
         /// <summary>
-        /// Verifies the MCP C# server is available.
-        /// The C# implementation doesn't require npm install or build steps.
+        /// Verifies the MCP C# server is available and builds it if necessary.
         /// </summary>
         public void InstallServer()
         {
@@ -244,12 +243,97 @@ namespace McpUnity.Unity
                 exePath = Path.Combine(serverPath, "unity-mcp.exe");
                 if (!File.Exists(exePath))
                 {
-                    McpLogger.LogWarning($"Unity MCP executable not found at expected locations. Building may be required.");
+                    McpLogger.LogWarning($"Unity MCP executable not found. Attempting to build...");
+                    
+                    // Check if the project file exists
+                    string projectPath = Path.Combine(serverPath, "UnityMcp.csproj");
+                    if (File.Exists(projectPath))
+                    {
+                        BuildMcpServer(serverPath, projectPath);
+                        
+                        // Check again after build
+                        exePath = Path.Combine(serverPath, "bin", "Release", "net8.0", "win-x64", "unity-mcp.exe");
+                        if (!File.Exists(exePath))
+                        {
+                            exePath = Path.Combine(serverPath, "unity-mcp.exe");
+                        }
+                        
+                        if (File.Exists(exePath))
+                        {
+                            McpLogger.LogInfo($"Unity MCP C# server successfully built at: {exePath}");
+                        }
+                        else
+                        {
+                            McpLogger.LogError("Failed to build Unity MCP server. Please check the build output.");
+                        }
+                    }
+                    else
+                    {
+                        McpLogger.LogError($"Unity MCP project file not found at: {projectPath}");
+                    }
                 }
             }
             else
             {
                 McpLogger.LogInfo($"Unity MCP C# server found at: {exePath}");
+            }
+        }
+        
+        /// <summary>
+        /// Builds the MCP server using dotnet CLI
+        /// </summary>
+        private void BuildMcpServer(string serverPath, string projectPath)
+        {
+            try
+            {
+                McpLogger.LogInfo("Building Unity MCP server...");
+                
+                var processInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "dotnet",
+                    Arguments = $"publish \"{projectPath}\" -c Release -r win-x64 --self-contained -o \"{serverPath}\"",
+                    WorkingDirectory = serverPath,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+
+                using (var process = System.Diagnostics.Process.Start(processInfo))
+                {
+                    if (process != null)
+                    {
+                        string output = process.StandardOutput.ReadToEnd();
+                        string error = process.StandardError.ReadToEnd();
+                        process.WaitForExit();
+
+                        if (process.ExitCode == 0)
+                        {
+                            McpLogger.LogInfo("Unity MCP server build completed successfully.");
+                            if (!string.IsNullOrEmpty(output))
+                            {
+                                McpLogger.LogInfo($"Build output: {output}");
+                            }
+                        }
+                        else
+                        {
+                            McpLogger.LogError($"Unity MCP server build failed with exit code: {process.ExitCode}");
+                            if (!string.IsNullOrEmpty(error))
+                            {
+                                McpLogger.LogError($"Build error: {error}");
+                            }
+                            if (!string.IsNullOrEmpty(output))
+                            {
+                                McpLogger.LogError($"Build output: {output}");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                McpLogger.LogError($"Exception while building Unity MCP server: {ex.Message}");
+                McpLogger.LogError($"Make sure .NET SDK is installed and available in PATH.");
             }
         }
         

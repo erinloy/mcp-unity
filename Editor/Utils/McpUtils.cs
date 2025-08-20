@@ -194,10 +194,71 @@ namespace McpUnity.Utils
             }
             
             McpLogger.LogWarning($"[MCP] C# server executable not found. Expected at: {exePath}");
-            McpLogger.LogInfo("[MCP] Please build the server manually using: dotnet build --configuration Release in the Server~ directory");
             
-            // Could attempt to build here, but that requires dotnet CLI to be available
-            // For now, just return false and let the user build manually
+            // Attempt to build the server automatically
+            string projectPath = Path.Combine(serverPath, "unity-mcp.csproj");
+            if (File.Exists(projectPath))
+            {
+                McpLogger.LogInfo($"[MCP Unity] Auto-building MCP server from: {projectPath}");
+                
+                var processInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "dotnet",
+                    Arguments = $"publish \"{projectPath}\" -c Release -r win-x64 --self-contained -o \"{serverPath}\"",
+                    WorkingDirectory = serverPath,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                
+                try
+                {
+                    using (var process = System.Diagnostics.Process.Start(processInfo))
+                    {
+                        if (process != null)
+                        {
+                            string output = process.StandardOutput.ReadToEnd();
+                            string error = process.StandardError.ReadToEnd();
+                            process.WaitForExit();
+                            
+                            if (process.ExitCode == 0)
+                            {
+                                McpLogger.LogInfo("[MCP Unity] Successfully built MCP server");
+                                // Check if the exe was created
+                                if (File.Exists(exePath))
+                                {
+                                    return true;
+                                }
+                                // Also check the root server path
+                                exePath = Path.Combine(serverPath, "unity-mcp.exe");
+                                if (File.Exists(exePath))
+                                {
+                                    return true;
+                                }
+                            }
+                            else
+                            {
+                                McpLogger.LogError($"[MCP Unity] Build failed with exit code {process.ExitCode}");
+                                if (!string.IsNullOrEmpty(error))
+                                {
+                                    McpLogger.LogError($"[MCP Unity] Build error: {error}");
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    McpLogger.LogError($"[MCP Unity] Failed to auto-build server: {e.Message}");
+                }
+            }
+            else
+            {
+                McpLogger.LogError($"[MCP Unity] Project file not found at: {projectPath}");
+            }
+            
+            McpLogger.LogInfo("[MCP] Please build the server manually using: dotnet publish -c Release -r win-x64 --self-contained in the Server~ directory");
             return false;
         }
 

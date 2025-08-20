@@ -11,6 +11,7 @@ This is a C# implementation of MCP Unity, forked from the excellent work at http
 - **Communication**: stdio protocol
 - **Configuration**: Auto-detected from Unity project root
 - **Settings**: `ProjectSettings/McpUnitySettings.json`
+- **Auto-Build**: v1.1.4+ automatically builds missing executable
 
 ---
 
@@ -127,6 +128,7 @@ The following tools are available for manipulating and querying Unity scenes and
 
 ## Requirements
 - Unity 2022.3 or later
+- .NET SDK 8.0 or later (for auto-build feature in v1.1.3+)
 
 > [!IMPORTANT]
 > **Project Path Cannot Contain Spaces**
@@ -192,8 +194,9 @@ The server automatically detects the Unity project root.
 ## <a name="start-server"></a>Start Unity Editor MCP Server
 
 1. Configure your MCP client (Claude, Cursor, etc.) with the path to `unity-mcp.exe`
-2. The server starts automatically when your MCP client connects
-3. The executable launches Unity in batch mode to handle MCP requests
+2. **Auto-Build Feature (v1.1.3+)**: If the executable is not found, it will be automatically built on first use
+3. The server starts automatically when your MCP client connects
+4. The executable launches Unity in batch mode to handle MCP requests
 
 ## Configuration
 
@@ -333,9 +336,12 @@ Yes, MCP Unity is an open-source project distributed under the MIT License. You 
 <details>
 <summary><span style="font-size: 1.1em; font-weight: bold;">Why won't the MCP Unity server start?</span></summary>
 
-- Check the Unity Console for error messages
-- Ensure Node.js is properly installed and accessible in your PATH
-- Verify that all dependencies are installed in the Server directory
+- **v1.1.3+ Auto-Build**: The server now automatically builds if the executable is missing
+- Check the Unity Console for build output and error messages
+- Ensure .NET SDK 8.0+ is installed and accessible in your PATH (`dotnet --version`)
+- If auto-build fails, try manually building:
+  - Navigate to `Packages/com.erinloy.mcp-unity/Server~`
+  - Run: `dotnet publish UnityMcp.csproj -c Release -r win-x64 --self-contained -o .`
 
 </details>
 
