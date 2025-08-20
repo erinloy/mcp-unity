@@ -12,6 +12,7 @@ using McpUnity.Tools;
 using McpUnity.Resources;
 using McpUnity.Discovery;
 using Unity.EditorCoroutines.Editor;
+// Force Unity recompile - fixed tools/list response format
 using System.Collections;
 using System.Collections.Specialized;
 using McpUnity.Utils;
@@ -92,34 +93,40 @@ namespace McpUnity.Unity
                 // Handle standard MCP protocol methods
                 else if (method == "tools/list")
                 {
-                    var toolsResult = new JObject
+                    var toolsArray = new JArray(
+                        _server.GetTools().Values.Select(tool => new JObject
+                        {
+                            ["name"] = tool.Name,
+                            ["description"] = tool.Description,
+                            ["inputSchema"] = tool.InputSchema
+                        })
+                    );
+                    
+                    // Return just the result - CreateResponse will wrap it properly
+                    var result = new JObject
                     {
-                        ["tools"] = new JArray(
-                            _server.GetTools().Values.Select(tool => new JObject
-                            {
-                                ["name"] = tool.Name,
-                                ["description"] = tool.Description,
-                                ["inputSchema"] = tool.InputSchema
-                            })
-                        )
+                        ["tools"] = toolsArray
                     };
-                    tcs.SetResult(toolsResult);
+                    tcs.SetResult(result);
                 }
                 else if (method == "resources/list" || method == "resource/list") // Support both singular and plural
                 {
-                    var resourcesResult = new JObject
+                    var resourcesArray = new JArray(
+                        _server.GetResources().Values.Select(resource => new JObject
+                        {
+                            ["uri"] = resource.Uri,
+                            ["name"] = resource.Name,
+                            ["description"] = resource.Description,
+                            ["mimeType"] = "text/plain"
+                        })
+                    );
+                    
+                    // Return just the result - CreateResponse will wrap it properly
+                    var result = new JObject
                     {
-                        ["resources"] = new JArray(
-                            _server.GetResources().Values.Select(resource => new JObject
-                            {
-                                ["uri"] = resource.Uri,
-                                ["name"] = resource.Name,
-                                ["description"] = resource.Description,
-                                ["mimeType"] = "text/plain"
-                            })
-                        )
+                        ["resources"] = resourcesArray
                     };
-                    tcs.SetResult(resourcesResult);
+                    tcs.SetResult(result);
                 }
                 else if (method == "resources/read" || method == "resource/read") // Support both singular and plural
                 {

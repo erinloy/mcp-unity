@@ -147,7 +147,7 @@ namespace McpUnity.DirectMcp.Services
 
         private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
         {
-            var buffer = new byte[4096];
+            var buffer = new byte[65536]; // Increased from 4KB to 64KB for large tool responses
             var messageBuilder = new StringBuilder();
 
             try

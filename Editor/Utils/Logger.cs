@@ -18,7 +18,15 @@ namespace McpUnity.Utils
         {
             if (McpUnitySettings.Instance.EnableInfoLogs)
             {
-                Debug.Log($"{LogPrefix}{message}");
+                // Defer to main thread to avoid stack traces in Unity console
+                if (System.Threading.Thread.CurrentThread.ManagedThreadId == 1)
+                {
+                    Debug.Log($"{LogPrefix}{message}");
+                }
+                else
+                {
+                    UnityEditor.EditorApplication.delayCall += () => Debug.Log($"{LogPrefix}{message}");
+                }
             }
         }
         
@@ -28,7 +36,15 @@ namespace McpUnity.Utils
         /// <param name="message">Message to log</param>
         public static void LogWarning(string message)
         {
-            Debug.LogWarning($"{LogPrefix}{message}");
+            // Defer to main thread to avoid stack traces in Unity console
+            if (System.Threading.Thread.CurrentThread.ManagedThreadId == 1)
+            {
+                Debug.LogWarning($"{LogPrefix}{message}");
+            }
+            else
+            {
+                UnityEditor.EditorApplication.delayCall += () => Debug.LogWarning($"{LogPrefix}{message}");
+            }
         }
         
         /// <summary>
@@ -37,7 +53,15 @@ namespace McpUnity.Utils
         /// <param name="message">Message to log</param>
         public static void LogError(string message)
         {
-            Debug.LogError($"{LogPrefix}{message}");
+            // Defer to main thread to avoid stack traces in Unity console
+            if (System.Threading.Thread.CurrentThread.ManagedThreadId == 1)
+            {
+                Debug.LogError($"{LogPrefix}{message}");
+            }
+            else
+            {
+                UnityEditor.EditorApplication.delayCall += () => Debug.LogError($"{LogPrefix}{message}");
+            }
         }
     }
 }

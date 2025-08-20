@@ -49,10 +49,22 @@ namespace McpUnity.DirectMcp.Services
                 }
 
                 // Fetch from Unity
+                _logger.LogInformation("Attempting to fetch tools from Unity Editor via WebSocket");
                 var response = await _rpcClient.SendRequestAsync("tools/list", null, cancellationToken);
-                if (response == null || response["result"] == null)
+                
+                // Add detailed logging
+                if (response == null)
                 {
-                    _logger.LogWarning("Failed to get tools from Unity");
+                    _logger.LogWarning("No response received from Unity for tools/list - WebSocket may not be connected");
+                    return _cachedTools ?? new List<Tool>();
+                }
+                
+                _logger.LogInformation("Received response from Unity with keys: {Keys}", string.Join(", ", response.Properties().Select(p => p.Name)));
+                _logger.LogDebug("Raw response from Unity: {Response}", response.ToString());
+                
+                if (response["result"] == null)
+                {
+                    _logger.LogWarning("Response from Unity missing 'result' field. Full response: {Response}", response.ToString());
                     return _cachedTools ?? new List<Tool>();
                 }
 

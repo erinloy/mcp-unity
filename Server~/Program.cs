@@ -76,10 +76,21 @@ namespace McpUnity.DirectMcp
             // Tool handlers
             .WithListToolsHandler(async (context, ct) =>
             {
+                var logger = context.Services!.GetRequiredService<ILogger<Program>>();
+                logger.LogInformation("MCP tools/list request received");
+                
                 var toolService = context.Services!.GetRequiredService<IUnityToolService>();
+                var tools = await toolService.GetToolsAsync(ct);
+                
+                logger.LogInformation("Returning {Count} tools to MCP client", tools.Count);
+                foreach (var tool in tools)
+                {
+                    logger.LogDebug("Tool: {Name} - {Description}", tool.Name, tool.Description);
+                }
+                
                 return new ListToolsResult
                 {
-                    Tools = await toolService.GetToolsAsync(ct)
+                    Tools = tools
                 };
             })
             .WithCallToolHandler(async (context, ct) =>

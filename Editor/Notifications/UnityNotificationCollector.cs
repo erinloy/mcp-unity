@@ -127,7 +127,7 @@ namespace McpUnity.Notifications
                     ["stackTrace"] = stackTrace,
                     ["type"] = type.ToString(),
                     ["timestamp"] = DateTime.UtcNow.ToString("O"),
-                    ["scene"] = SceneManager.GetActiveScene().name
+                    ["scene"] = GetSafeSceneName()
                 }, NotificationPriority.Critical);
             }
             else if (type == LogType.Warning)
@@ -153,8 +153,8 @@ namespace McpUnity.Notifications
         
         private static void OnLogMessageReceivedThreaded(string logString, string stackTrace, LogType type)
         {
-            // Handle threaded logs the same way
-            OnLogMessageReceived(logString, stackTrace, type);
+            // Defer to main thread to avoid Unity API access from background thread
+            EditorApplication.delayCall += () => OnLogMessageReceived(logString, stackTrace, type);
         }
         
         #endregion
@@ -269,7 +269,7 @@ namespace McpUnity.Notifications
             // Throttle hierarchy changes as they can be frequent
             QueueNotification("scene/hierarchyChanged", new JObject
             {
-                ["scene"] = SceneManager.GetActiveScene().name,
+                ["scene"] = GetSafeSceneName(),
                 ["timestamp"] = DateTime.UtcNow.ToString("O")
             }, NotificationPriority.VeryLow);
         }
@@ -302,6 +302,22 @@ namespace McpUnity.Notifications
             {
                 ["timestamp"] = DateTime.UtcNow.ToString("O")
             }, NotificationPriority.Normal);
+        }
+        
+        #endregion
+        
+        #region Helper Methods
+        
+        private static string GetSafeSceneName()
+        {
+            try
+            {
+                return SceneManager.GetActiveScene().name;
+            }
+            catch
+            {
+                return "Unknown";
+            }
         }
         
         #endregion
