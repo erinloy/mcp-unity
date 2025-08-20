@@ -50,6 +50,10 @@ ExportedObj/
 *.opendb
 *.VC.db
 
+# BUT include the Server~ project files needed for building
+!Server~/*.csproj
+!Server~/*.sln
+
 # Rider Generated
 **/Plugins/Editor/JetBrains*
 .idea
