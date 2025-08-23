@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -13,14 +13,16 @@
     <PublishReadyToRun>true</PublishReadyToRun>
     <DebugType>embedded</DebugType>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Opt out of central package management -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ModelContextProtocol" />
-    <PackageReference Include="ModelContextProtocol.Core" />
-    <PackageReference Include="Newtonsoft.Json" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+    <PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.4" />
+    <PackageReference Include="ModelContextProtocol.Core" Version="0.3.0-preview.4" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0-preview.7.25380.108" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.0-preview.7.25380.108" />
   </ItemGroup>
 
   <ItemGroup>
@@ -43,14 +45,10 @@
     </PropertyGroup>
     
     <!-- Kill any existing instances of unity-mcp.exe at the target location -->
-    <Exec Command="powershell -Command &quot;$targetPath = '$(TargetExePath)'; if (Test-Path $targetPath) { Get-Process | Where-Object { $_.Path -eq $targetPath } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500 }&quot;" 
-          ContinueOnError="true" />
+    <Exec Command="powershell -Command &quot;$targetPath = '$(TargetExePath)'; if (Test-Path $targetPath) { Get-Process | Where-Object { $_.Path -eq $targetPath } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500 }&quot;" ContinueOnError="true" />
     
     <!-- Copy the executable to the predictable location -->
-    <Copy SourceFiles="$(SourceExePath)" 
-          DestinationFiles="$(TargetExePath)"
-          OverwriteReadOnlyFiles="true"
-          SkipUnchangedFiles="false" />
+    <Copy SourceFiles="$(SourceExePath)" DestinationFiles="$(TargetExePath)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" />
     
     <Message Text="Unity MCP executable deployed to: $(TargetExePath)" Importance="high" />
   </Target>
