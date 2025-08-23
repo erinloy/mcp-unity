@@ -37,7 +37,8 @@
       <IsInPackageCache Condition="$(MSBuildProjectDirectory.Contains('PackageCache'))">true</IsInPackageCache>
       
       <!-- Calculate Unity project root based on location -->
-      <UnityProjectRoot Condition="'$(IsInPackageCache)' == 'true'">$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../../../../..'))</UnityProjectRoot>
+      <!-- From PackageCache: Server~ -> com.erinloy.mcp-unity@hash -> PackageCache -> Library -> [Unity Project Root] -->
+      <UnityProjectRoot Condition="'$(IsInPackageCache)' == 'true'">$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../../..'))</UnityProjectRoot>
       <UnityProjectRoot Condition="'$(IsInPackageCache)' != 'true'">$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../..'))</UnityProjectRoot>
       
       <TargetExePath>$(UnityProjectRoot)/Tools/unity-mcp/unity-mcp.exe</TargetExePath>
