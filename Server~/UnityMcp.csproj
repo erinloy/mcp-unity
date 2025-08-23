@@ -27,4 +27,32 @@
     <Compile Remove="UnityMcpConnector.cs" />
   </ItemGroup>
 
+  <!-- Post-build event to copy executable to predictable location -->
+  <Target Name="PostBuild" AfterTargets="Publish">
+    <PropertyGroup>
+      <!-- Detect if we're in a package cache deployment or source location -->
+      <IsInPackageCache>false</IsInPackageCache>
+      <IsInPackageCache Condition="$(MSBuildProjectDirectory.Contains('PackageCache'))">true</IsInPackageCache>
+      
+      <!-- Calculate Unity project root based on location -->
+      <UnityProjectRoot Condition="'$(IsInPackageCache)' == 'true'">$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../../../../..'))</UnityProjectRoot>
+      <UnityProjectRoot Condition="'$(IsInPackageCache)' != 'true'">$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../..'))</UnityProjectRoot>
+      
+      <TargetExePath>$(UnityProjectRoot)/Tools/unity-mcp/unity-mcp.exe</TargetExePath>
+      <SourceExePath>$(PublishDir)unity-mcp.exe</SourceExePath>
+    </PropertyGroup>
+    
+    <!-- Kill any existing instances of unity-mcp.exe at the target location -->
+    <Exec Command="powershell -Command &quot;$targetPath = '$(TargetExePath)'; if (Test-Path $targetPath) { Get-Process | Where-Object { $_.Path -eq $targetPath } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500 }&quot;" 
+          ContinueOnError="true" />
+    
+    <!-- Copy the executable to the predictable location -->
+    <Copy SourceFiles="$(SourceExePath)" 
+          DestinationFiles="$(TargetExePath)"
+          OverwriteReadOnlyFiles="true"
+          SkipUnchangedFiles="false" />
+    
+    <Message Text="Unity MCP executable deployed to: $(TargetExePath)" Importance="high" />
+  </Target>
+
 </Project>

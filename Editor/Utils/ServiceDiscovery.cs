@@ -204,9 +204,11 @@ namespace McpUnity.Utils
             
             foreach (var service in services)
             {
+                // Use the predictable location at project root
+                string exePath = Path.Combine(service.projectPath, "..", "Tools", "unity-mcp", "unity-mcp.exe");
                 configs[service.mcpInstanceId] = new
                 {
-                    command = $"{service.projectPath}/../Assets/mcp-unity/Server~/bin/Release/net8.0/win-x64/unity-mcp.exe",
+                    command = exePath,
                     args = new string[] { },  // No args needed for C# exe
                     env = new Dictionary<string, string>
                     {

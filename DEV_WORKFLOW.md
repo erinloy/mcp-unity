@@ -109,7 +109,7 @@ mcp__unity-ziltch__control status
 | Component | Location |
 |-----------|----------|
 | Unity MCP Source | `Assets/mcp-unity/Server~/Program.cs` |
-| Unity MCP Binary | `Assets/mcp-unity/Server~/bin/Release/net8.0/win-x64/unity-mcp.exe` |
+| Unity MCP Binary | `Tools/unity-mcp/unity-mcp.exe` (at Unity project root) |
 | Unity Tools | `Assets/mcp-unity/Editor/Tools/` |
 | Unity Resources | `Assets/mcp-unity/Editor/Resources/` |
 | Deploy Script | `Assets/mcp-unity/Server~/deploy-unity-mcp.ps1` |

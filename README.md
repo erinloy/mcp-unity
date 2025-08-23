@@ -7,7 +7,7 @@ This is a C# implementation of MCP Unity, forked from the excellent work at http
 ## Implementation Details
 
 - **Language**: Pure C#
-- **Server Location**: `Editor/DirectMcp/unity-mcp.exe`
+- **Server Location**: `Tools/unity-mcp/unity-mcp.exe` (at Unity project root)
 - **Communication**: stdio protocol
 - **Configuration**: Auto-detected from Unity project root
 - **Settings**: `ProjectSettings/McpUnitySettings.json`
@@ -175,13 +175,13 @@ The following tools are available for manipulating and querying Unity scenes and
 
 Open the MCP configuration file of your AI client (e.g. claude_desktop_config.json in Claude Desktop) and add:
 
-> Replace `ABSOLUTE/PATH/TO` with the absolute path to your Unity project's mcp-unity installation.
+> Replace `ABSOLUTE/PATH/TO/YOUR/UNITY/PROJECT` with the absolute path to your Unity project root.
 
 ```json
 {
    "mcpServers": {
        "unity-mcp": {
-          "command": "ABSOLUTE/PATH/TO/mcp-unity/Editor/DirectMcp/unity-mcp.exe"
+          "command": "ABSOLUTE/PATH/TO/YOUR/UNITY/PROJECT/Tools/unity-mcp/unity-mcp.exe"
        }
    }
 }
@@ -193,8 +193,8 @@ The server automatically detects the Unity project root.
 
 ## <a name="start-server"></a>Start Unity Editor MCP Server
 
-1. Configure your MCP client (Claude, Cursor, etc.) with the path to `unity-mcp.exe`
-2. **Auto-Build Feature (v1.1.3+)**: If the executable is not found, it will be automatically built on first use
+1. Configure your MCP client (Claude, Cursor, etc.) with the path to `Tools/unity-mcp/unity-mcp.exe` at your Unity project root
+2. **Auto-Build Feature (v1.1.3+)**: If the executable is not found at `Tools/unity-mcp/`, it will be automatically built on first use
 3. The server starts automatically when your MCP client connects
 4. The executable launches Unity in batch mode to handle MCP requests
 

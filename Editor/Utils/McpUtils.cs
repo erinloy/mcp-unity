@@ -22,14 +22,9 @@ namespace McpUnity.Utils
         /// </summary>
         public static string GenerateMcpConfigJson(bool useTabsIndentation)
         {
-            // Use the C# executable instead of Node.js
-            string exePath = Path.Combine(GetServerPath(), "bin", "Release", "net8.0", "win-x64", "unity-mcp.exe");
-            
-            // Fallback to the direct exe if the full path doesn't exist
-            if (!File.Exists(exePath))
-            {
-                exePath = Path.Combine(GetServerPath(), "unity-mcp.exe");
-            }
+            // Use the predictable location at project root
+            string projectRoot = GetUnityProjectRoot();
+            string exePath = Path.Combine(projectRoot, "Tools", "unity-mcp", "unity-mcp.exe");
             
             var config = new Dictionary<string, object>
             {
@@ -71,6 +66,15 @@ namespace McpUnity.Utils
             return stringWriter.ToString().Replace("\\", "/").Replace("//", "/");
         }
 
+        /// <summary>
+        /// Gets the Unity project root directory
+        /// </summary>
+        public static string GetUnityProjectRoot()
+        {
+            // Get the path to the Assets folder and go up one level
+            return Path.GetDirectoryName(Application.dataPath);
+        }
+        
         /// <summary>
         /// Gets the absolute path to the Server directory containing package.json (root server dir).
         /// Works whether MCP Unity is installed via Package Manager or directly in the Assets folder
@@ -175,28 +179,22 @@ namespace McpUnity.Utils
         /// <returns>True if the server executable exists or was successfully built</returns>
         public static bool EnsureCSharpServerBuilt()
         {
-            string serverPath = GetServerPath();
-            string exePath = Path.Combine(serverPath, "bin", "Release", "net8.0", "win-x64", "unity-mcp.exe");
+            string projectRoot = GetUnityProjectRoot();
+            string exePath = Path.Combine(projectRoot, "Tools", "unity-mcp", "unity-mcp.exe");
             
-            // Check if already built
+            // Check if already built at the new location
             if (File.Exists(exePath))
             {
                 McpLogger.LogInfo($"[MCP] C# server already built at: {exePath}");
                 return true;
             }
             
-            // Fallback to direct exe location
-            exePath = Path.Combine(serverPath, "unity-mcp.exe");
-            if (File.Exists(exePath))
-            {
-                McpLogger.LogInfo($"[MCP] C# server found at: {exePath}");
-                return true;
-            }
-            
             McpLogger.LogWarning($"[MCP] C# server executable not found. Expected at: {exePath}");
             
             // Attempt to build the server automatically
-            string projectPath = Path.Combine(serverPath, "unity-mcp.csproj");
+            string serverPath = GetServerPath();
+            string projectPath = Path.Combine(serverPath, "UnityMcp.csproj");
+            
             if (File.Exists(projectPath))
             {
                 McpLogger.LogInfo($"[MCP Unity] Auto-building MCP server from: {projectPath}");
@@ -204,7 +202,7 @@ namespace McpUnity.Utils
                 var processInfo = new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "dotnet",
-                    Arguments = $"publish \"{projectPath}\" -c Release -r win-x64 --self-contained -o \"{serverPath}\"",
+                    Arguments = $"publish \"{projectPath}\" -c Release -r win-x64 --self-contained",
                     WorkingDirectory = serverPath,
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
@@ -225,16 +223,14 @@ namespace McpUnity.Utils
                             if (process.ExitCode == 0)
                             {
                                 McpLogger.LogInfo("[MCP Unity] Successfully built MCP server");
-                                // Check if the exe was created
+                                // Check if the exe was created at the new location (post-build should have copied it)
                                 if (File.Exists(exePath))
                                 {
                                     return true;
                                 }
-                                // Also check the root server path
-                                exePath = Path.Combine(serverPath, "unity-mcp.exe");
-                                if (File.Exists(exePath))
+                                else
                                 {
-                                    return true;
+                                    McpLogger.LogError($"[MCP Unity] Build succeeded but executable not found at: {exePath}");
                                 }
                             }
                             else

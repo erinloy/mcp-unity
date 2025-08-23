@@ -227,55 +227,45 @@ namespace McpUnity.Unity
         /// </summary>
         public void InstallServer()
         {
-            string serverPath = McpUtils.GetServerPath();
+            string projectRoot = McpUtils.GetUnityProjectRoot();
+            string exePath = Path.Combine(projectRoot, "Tools", "unity-mcp", "unity-mcp.exe");
 
-            if (string.IsNullOrEmpty(serverPath) || !Directory.Exists(serverPath))
+            // Check if executable exists at the new predictable location
+            if (File.Exists(exePath))
             {
-                McpLogger.LogError($"Server path not found or invalid: {serverPath}. Make sure that MCP C# server is installed.");
+                McpLogger.LogInfo($"Unity MCP C# server found at: {exePath}");
                 return;
             }
 
-            // Check for the C# executable
-            string exePath = Path.Combine(serverPath, "bin", "Release", "net8.0", "win-x64", "unity-mcp.exe");
-            if (!File.Exists(exePath))
+            McpLogger.LogWarning($"Unity MCP executable not found at: {exePath}. Attempting to build...");
+            
+            // Get the source path to build from
+            string serverPath = McpUtils.GetServerPath();
+            if (string.IsNullOrEmpty(serverPath) || !Directory.Exists(serverPath))
             {
-                // Try alternative location
-                exePath = Path.Combine(serverPath, "unity-mcp.exe");
-                if (!File.Exists(exePath))
+                McpLogger.LogError($"Server source path not found: {serverPath}. Cannot build MCP server.");
+                return;
+            }
+            
+            // Check if the project file exists
+            string projectPath = Path.Combine(serverPath, "UnityMcp.csproj");
+            if (File.Exists(projectPath))
+            {
+                BuildMcpServer(serverPath, projectPath);
+                
+                // Check if build succeeded and exe was copied to new location
+                if (File.Exists(exePath))
                 {
-                    McpLogger.LogWarning($"Unity MCP executable not found. Attempting to build...");
-                    
-                    // Check if the project file exists
-                    string projectPath = Path.Combine(serverPath, "UnityMcp.csproj");
-                    if (File.Exists(projectPath))
-                    {
-                        BuildMcpServer(serverPath, projectPath);
-                        
-                        // Check again after build
-                        exePath = Path.Combine(serverPath, "bin", "Release", "net8.0", "win-x64", "unity-mcp.exe");
-                        if (!File.Exists(exePath))
-                        {
-                            exePath = Path.Combine(serverPath, "unity-mcp.exe");
-                        }
-                        
-                        if (File.Exists(exePath))
-                        {
-                            McpLogger.LogInfo($"Unity MCP C# server successfully built at: {exePath}");
-                        }
-                        else
-                        {
-                            McpLogger.LogError("Failed to build Unity MCP server. Please check the build output.");
-                        }
-                    }
-                    else
-                    {
-                        McpLogger.LogError($"Unity MCP project file not found at: {projectPath}");
-                    }
+                    McpLogger.LogInfo($"Unity MCP C# server successfully built at: {exePath}");
+                }
+                else
+                {
+                    McpLogger.LogError($"Failed to build Unity MCP server or copy to: {exePath}");
                 }
             }
             else
             {
-                McpLogger.LogInfo($"Unity MCP C# server found at: {exePath}");
+                McpLogger.LogError($"Unity MCP project file not found at: {projectPath}");
             }
         }
         
@@ -291,7 +281,7 @@ namespace McpUnity.Unity
                 var processInfo = new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "dotnet",
-                    Arguments = $"publish \"{projectPath}\" -c Release -r win-x64 --self-contained -o \"{serverPath}\"",
+                    Arguments = $"publish \"{projectPath}\" -c Release -r win-x64 --self-contained",
                     WorkingDirectory = serverPath,
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
