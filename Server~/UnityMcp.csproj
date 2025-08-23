@@ -29,8 +29,8 @@
     <Compile Remove="UnityMcpConnector.cs" />
   </ItemGroup>
 
-  <!-- Post-build event to copy executable to predictable location -->
-  <Target Name="PostBuild" AfterTargets="Publish">
+  <!-- Post-build event to build and deploy executable -->
+  <Target Name="PostBuild" AfterTargets="Build" Condition="'$(SkipPostBuild)' != 'true'">
     <PropertyGroup>
       <!-- Detect if we're in a package cache deployment or source location -->
       <IsInPackageCache>false</IsInPackageCache>
@@ -41,14 +41,20 @@
       <UnityProjectRoot Condition="'$(IsInPackageCache)' != 'true'">$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../..'))</UnityProjectRoot>
       
       <TargetExePath>$(UnityProjectRoot)/Tools/unity-mcp/unity-mcp.exe</TargetExePath>
-      <SourceExePath>$(PublishDir)unity-mcp.exe</SourceExePath>
+      <TempPublishDir>$(MSBuildProjectDirectory)/bin/publish/</TempPublishDir>
     </PropertyGroup>
+    
+    <!-- Publish the project to create the executable (with flag to prevent recursion) -->
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectFile)&quot; -c Release -r win-x64 --self-contained -o &quot;$(TempPublishDir)&quot; -p:SkipPostBuild=true" />
     
     <!-- Kill any existing instances of unity-mcp.exe at the target location -->
     <Exec Command="powershell -Command &quot;$targetPath = '$(TargetExePath)'; if (Test-Path $targetPath) { Get-Process | Where-Object { $_.Path -eq $targetPath } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500 }&quot;" ContinueOnError="true" />
     
+    <!-- Create Tools directory if it doesn't exist -->
+    <MakeDir Directories="$(UnityProjectRoot)/Tools/unity-mcp" />
+    
     <!-- Copy the executable to the predictable location -->
-    <Copy SourceFiles="$(SourceExePath)" DestinationFiles="$(TargetExePath)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" />
+    <Copy SourceFiles="$(TempPublishDir)unity-mcp.exe" DestinationFiles="$(TargetExePath)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" />
     
     <Message Text="Unity MCP executable deployed to: $(TargetExePath)" Importance="high" />
   </Target>
