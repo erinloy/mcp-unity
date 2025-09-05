@@ -49,8 +49,8 @@ Use the optimized `hot-reload.ps1` script:
 
 **How it works:**
 1. Builds unity-mcp.exe with latest changes
-2. Creates `.reconnect-now` signal for McpProxy
-3. McpProxy reconnects without dropping Claude connection
+2. McpProxy detects downstream server restart and automatically reconnects
+3. Claude connection remains active
 4. Tools remain available throughout the process
 5. No `/mcp` command or Claude restart needed!
 
