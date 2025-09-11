@@ -18,11 +18,16 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.4" />
-    <PackageReference Include="ModelContextProtocol.Core" Version="0.3.0-preview.4" />
+    <!-- MCP SDK references replaced with project references to fork -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0-preview.7.25380.108" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.0-preview.7.25380.108" />
+  </ItemGroup>
+
+  <!-- Reference the MCP SDK fork projects -->
+  <ItemGroup>
+    <ProjectReference Include="../../../../../../../REFERENCE/libraries/mcp-csharp-sdk/src/ModelContextProtocol.Core/ModelContextProtocol.Core.csproj" />
+    <ProjectReference Include="../../../../../../../REFERENCE/libraries/mcp-csharp-sdk/src/ModelContextProtocol/ModelContextProtocol.csproj" />
   </ItemGroup>
 
   <ItemGroup>
