@@ -26,8 +26,8 @@
 
   <!-- Reference the MCP SDK fork projects -->
   <ItemGroup>
-    <ProjectReference Include="../../../../../../../REFERENCE/libraries/mcp-csharp-sdk/src/ModelContextProtocol.Core/ModelContextProtocol.Core.csproj" />
-    <ProjectReference Include="../../../../../../../REFERENCE/libraries/mcp-csharp-sdk/src/ModelContextProtocol/ModelContextProtocol.csproj" />
+    <ProjectReference Include="../../../../../../external/mcp-csharp-sdk/src/ModelContextProtocol.Core/ModelContextProtocol.Core.csproj" />
+    <ProjectReference Include="../../../../../../external/mcp-csharp-sdk/src/ModelContextProtocol/ModelContextProtocol.csproj" />
   </ItemGroup>
 
   <ItemGroup>
