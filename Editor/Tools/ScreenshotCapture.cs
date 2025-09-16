@@ -12,6 +12,25 @@ namespace McpUnity.Tools
     /// </summary>
     public static class ScreenshotCapture
     {
+        // Force a repaint before capture to ensure views are up to date
+        private static void ForceRepaintAllViews()
+        {
+            SceneView.RepaintAll();
+
+            // Force Game view repaint
+            System.Type gameViewType = System.Type.GetType("UnityEditor.GameView,UnityEditor");
+            if (gameViewType != null)
+            {
+                EditorWindow gameView = EditorWindow.GetWindow(gameViewType, false, null, false);
+                if (gameView != null)
+                {
+                    gameView.Repaint();
+                }
+            }
+
+            // Force Unity to process the repaint immediately
+            UnityEditorInternal.InternalEditorUtility.RepaintAllViews();
+        }
         /// <summary>
         /// Captures a screenshot from the specified view
         /// </summary>
@@ -26,6 +45,8 @@ namespace McpUnity.Tools
 
             try
             {
+                // Force views to repaint before capture
+                ForceRepaintAllViews();
                 if (viewType == "scene" || viewType == "both")
                 {
                     var sceneScreenshot = CaptureSceneView(width, height);
@@ -85,12 +106,24 @@ namespace McpUnity.Tools
             var sceneView = SceneView.lastActiveSceneView;
             if (sceneView == null)
             {
-                Debug.LogWarning("[MCP Unity] No active Scene view found");
-                return null;
+                // Try to get or create a scene view
+                sceneView = SceneView.sceneViews.Count > 0 ?
+                    SceneView.sceneViews[0] as SceneView :
+                    EditorWindow.GetWindow<SceneView>();
+
+                if (sceneView == null)
+                {
+                    Debug.LogWarning("[MCP Unity] No Scene view available");
+                    return null;
+                }
             }
 
             try
             {
+                // Force scene view to update
+                sceneView.Focus();
+                sceneView.Repaint();
+
                 // Get the scene camera
                 var camera = sceneView.camera;
                 if (camera == null)
@@ -150,100 +183,104 @@ namespace McpUnity.Tools
         {
             try
             {
-                // Use ScreenCapture for Game view
-                string tempPath = Path.Combine(Path.GetTempPath(), $"unity_mcp_screenshot_{Guid.NewGuid()}.png");
-                
-                // Capture the game view
-                ScreenCapture.CaptureScreenshot(tempPath);
-                
-                // Wait for the file to be written (Unity writes it asynchronously)
-                // Try multiple times with increasing delays
-                int maxAttempts = 10;
-                for (int i = 0; i < maxAttempts; i++)
+                var gameViewType = System.Type.GetType("UnityEditor.GameView,UnityEditor");
+                if (gameViewType == null)
                 {
-                    System.Threading.Thread.Sleep(100);
-                    if (File.Exists(tempPath))
-                        break;
-                }
-                
-                if (!File.Exists(tempPath))
-                {
-                    Debug.LogWarning("[MCP Unity] Screenshot file was not created after waiting 1 second");
-                    // Fallback: try to capture using a different method
-                    return CaptureGameViewAlternative();
-                }
-
-                // Read the file and convert to base64
-                byte[] pngData = File.ReadAllBytes(tempPath);
-                string base64Data = Convert.ToBase64String(pngData);
-                
-                // Get dimensions from the PNG data
-                var dimensions = GetPngDimensions(pngData);
-                
-                // Clean up temp file
-                File.Delete(tempPath);
-
-                return new Dictionary<string, object>
-                {
-                    ["data"] = $"data:image/png;base64,{base64Data}",
-                    ["width"] = dimensions.Item1,
-                    ["height"] = dimensions.Item2
-                };
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[MCP Unity] Failed to capture Game view: {ex.Message}");
-                return null;
-            }
-        }
-
-        private static Dictionary<string, object> CaptureGameViewAlternative()
-        {
-            try
-            {
-                // Alternative method: capture the Game view using RenderTexture
-                var gameView = EditorWindow.GetWindow(System.Type.GetType("UnityEditor.GameView,UnityEditor"));
-                if (gameView == null)
-                {
-                    Debug.LogWarning("[MCP Unity] Game view is not open");
+                    Debug.LogError("[MCP Unity] Cannot find GameView type");
                     return null;
                 }
-                
-                // Use reflection to get the game view's render texture
-                var gameViewType = gameView.GetType();
-                var renderTextureProperty = gameViewType.GetProperty("targetTexture", 
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                
-                if (renderTextureProperty == null)
+
+                var gameView = EditorWindow.GetWindow(gameViewType, false, null, false);
+                if (gameView == null)
                 {
-                    // Fallback: return a simple error placeholder
+                    Debug.LogError("[MCP Unity] Cannot get Game view window");
+                    return null;
+                }
+
+                // Force focus and repaint
+                gameView.Focus();
+                gameView.Repaint();
+
+                // Wait a frame for the repaint to complete
+                System.Threading.Thread.Sleep(50);
+
+                // Try to get the RenderTexture using reflection
+                RenderTexture renderTexture = null;
+
+                // Method 1: Try to get via targetRenderTexture property
+                var targetRenderTextureProp = gameViewType.GetProperty("targetRenderTexture",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (targetRenderTextureProp != null)
+                {
+                    renderTexture = targetRenderTextureProp.GetValue(gameView) as RenderTexture;
+                }
+
+                // Method 2: Try via GetMainGameViewRenderTexture static method
+                if (renderTexture == null)
+                {
+                    var getMainRenderTextureMethod = gameViewType.GetMethod("GetMainGameViewRenderTexture",
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                    if (getMainRenderTextureMethod != null)
+                    {
+                        renderTexture = getMainRenderTextureMethod.Invoke(null, null) as RenderTexture;
+                    }
+                }
+
+                // Method 3: Try via GetRenderTexture instance method
+                if (renderTexture == null)
+                {
+                    var getRenderTextureMethod = gameViewType.GetMethod("GetRenderTexture",
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (getRenderTextureMethod != null)
+                    {
+                        renderTexture = getRenderTextureMethod.Invoke(gameView, null) as RenderTexture;
+                    }
+                }
+
+                if (renderTexture == null)
+                {
+                    Debug.LogError("[MCP Unity] Cannot access Game view render texture. Make sure the Game view is visible and rendering.");
+                    return null;
+                }
+
+                // Capture from the render texture
+                int captureWidth = width > 0 ? width : renderTexture.width;
+                int captureHeight = height > 0 ? height : renderTexture.height;
+
+                var previousActive = RenderTexture.active;
+                RenderTexture.active = renderTexture;
+
+                try
+                {
+                    var texture2D = new Texture2D(captureWidth, captureHeight, TextureFormat.RGB24, false);
+                    texture2D.ReadPixels(new Rect(0, 0, captureWidth, captureHeight), 0, 0);
+                    texture2D.Apply();
+
+                    byte[] pngData = texture2D.EncodeToPNG();
+                    string base64Data = Convert.ToBase64String(pngData);
+
+                    UnityEngine.Object.DestroyImmediate(texture2D);
+
                     return new Dictionary<string, object>
                     {
-                        ["type"] = "game",
-                        ["data"] = "data:image/png;base64,",  // Empty image
-                        ["width"] = 0,
-                        ["height"] = 0,
-                        ["error"] = "Could not capture Game view"
+                        ["data"] = $"data:image/png;base64,{base64Data}",
+                        ["width"] = captureWidth,
+                        ["height"] = captureHeight
                     };
                 }
-                
-                // Return placeholder for now
-                return new Dictionary<string, object>
+                finally
                 {
-                    ["type"] = "game",
-                    ["data"] = "data:image/png;base64,",  // Empty image
-                    ["width"] = 0,
-                    ["height"] = 0,
-                    ["error"] = "Game view capture requires Unity to be in Play mode or focused"
-                };
+                    RenderTexture.active = previousActive;
+                }
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[MCP Unity] Failed to capture Game view (alternative): {ex.Message}");
+                Debug.Log($"[MCP Unity] Editor capture method failed (expected in some Unity versions): {ex.Message}");
                 return null;
             }
         }
-        
+
+
         private static (int, int) GetPngDimensions(byte[] pngData)
         {
             // PNG dimensions are stored at bytes 16-23

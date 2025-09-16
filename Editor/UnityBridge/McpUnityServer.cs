@@ -1,4 +1,5 @@
 using System;
+using McpUnity.Tools;
 using System.Collections.Generic;
 using System.Threading;
 using UnityEngine;
@@ -375,6 +376,10 @@ namespace McpUnity.Unity
             // Register TestHotReloadTool - Added for testing hot-reload functionality
             TestHotReloadTool testHotReloadTool = new TestHotReloadTool();
             _tools.Add(testHotReloadTool.Name, testHotReloadTool);
+
+            // Register SimpleUITool - Basic UI control (replaces complex UIManipulationTool)
+            SimpleUITool simpleUITool = new SimpleUITool();
+            _tools.Add(simpleUITool.Name, simpleUITool);
         }
         
         /// <summary>

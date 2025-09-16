@@ -40,9 +40,15 @@ namespace McpUnity.Tools
                 {
                     return JObject.FromObject(new
                     {
-                        success = false,
-                        type = "error",
-                        message = $"Invalid viewType: {viewType}. Must be 'scene', 'game', or 'both'"
+                        content = new[]
+                        {
+                            new
+                            {
+                                type = "text",
+                                text = $"Invalid viewType: {viewType}. Must be 'scene', 'game', or 'both'"
+                            }
+                        },
+                        isError = true
                     });
                 }
                 
@@ -59,56 +65,79 @@ namespace McpUnity.Tools
                 
                 if ((bool)result["success"])
                 {
-                    // For MCP, we should return the image data in the proper format
-                    // MCP supports images as base64-encoded data URLs or binary content
-                    
+                    // Return proper MCP format with content array
                     if (result.ContainsKey("screenshots"))
                     {
                         var screenshots = result["screenshots"] as List<Dictionary<string, object>>;
                         if (screenshots != null && screenshots.Count > 0)
                         {
-                            // For single screenshot, return directly
-                            if (screenshots.Count == 1)
+                            // Create MCP-compliant content array
+                            var contentArray = new List<object>();
+
+                            foreach (var screenshot in screenshots)
                             {
-                                var screenshot = screenshots[0];
-                                return JObject.FromObject(new
+                                var dataUrl = screenshot["data"] as string;
+                                if (!string.IsNullOrEmpty(dataUrl))
                                 {
-                                    success = true,
-                                    type = "image",
-                                    data = screenshot,
-                                    message = $"Captured {screenshot["type"]} view screenshot"
+                                    // Extract base64 data from data URL
+                                    string base64Data = dataUrl;
+                                    if (dataUrl.StartsWith("data:image/png;base64,"))
+                                    {
+                                        base64Data = dataUrl.Substring("data:image/png;base64,".Length);
+                                    }
+
+                                    contentArray.Add(new
+                                    {
+                                        type = "image",
+                                        data = base64Data,
+                                        mimeType = "image/png"
+                                    });
+                                }
+
+                                // Also add text description
+                                contentArray.Add(new
+                                {
+                                    type = "text",
+                                    text = $"Screenshot captured from {screenshot["type"]} view " +
+                                           $"({screenshot["width"]}x{screenshot["height"]}) at {screenshot.GetValueOrDefault("timestamp", DateTime.UtcNow.ToString("o"))}"
                                 });
                             }
-                            else
+
+                            return JObject.FromObject(new
                             {
-                                // For multiple screenshots, return as array
-                                return JObject.FromObject(new
-                                {
-                                    success = true,
-                                    type = "images",
-                                    data = result,
-                                    message = $"Captured {screenshots.Count} screenshots"
-                                });
-                            }
+                                content = contentArray,
+                                isError = false
+                            });
                         }
                     }
                     else if (result.ContainsKey("files"))
                     {
                         return JObject.FromObject(new
                         {
-                            success = true,
-                            type = "files",
-                            data = result,
-                            message = result["message"] as string
+                            content = new[]
+                            {
+                                new
+                                {
+                                    type = "text",
+                                    text = result["message"] as string
+                                }
+                            },
+                            isError = false
                         });
                     }
                 }
                 
                 return JObject.FromObject(new
                 {
-                    success = false,
-                    type = "error",
-                    message = result.ContainsKey("error") ? result["error"] as string : "Screenshot capture failed"
+                    content = new[]
+                    {
+                        new
+                        {
+                            type = "text",
+                            text = result.ContainsKey("error") ? result["error"] as string : "Screenshot capture failed"
+                        }
+                    },
+                    isError = true
                 });
             }
             catch (Exception ex)
@@ -116,9 +145,15 @@ namespace McpUnity.Tools
                 McpLogger.LogError($"Screenshot tool error: {ex}");
                 return JObject.FromObject(new
                 {
-                    success = false,
-                    type = "error",
-                    message = $"Screenshot capture failed: {ex.Message}"
+                    content = new[]
+                    {
+                        new
+                        {
+                            type = "text",
+                            text = $"Screenshot capture failed: {ex.Message}"
+                        }
+                    },
+                    isError = true
                 });
             }
         }
