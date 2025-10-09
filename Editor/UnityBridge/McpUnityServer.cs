@@ -1,5 +1,4 @@
 using System;
-using McpUnity.Tools;
 using System.Collections.Generic;
 using System.Threading;
 using UnityEngine;
@@ -380,6 +379,10 @@ namespace McpUnity.Unity
             // Register SimpleUITool - Basic UI control (replaces complex UIManipulationTool)
             SimpleUITool simpleUITool = new SimpleUITool();
             _tools.Add(simpleUITool.Name, simpleUITool);
+
+            // Register CompilationStatusTool
+            CompilationStatusTool compilationStatusTool = new CompilationStatusTool();
+            _tools.Add(compilationStatusTool.Name, compilationStatusTool);
         }
         
         /// <summary>

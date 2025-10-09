@@ -41,7 +41,8 @@ namespace McpUnity.DirectMcp
             {
                 options.LogToStandardErrorThreshold = LogLevel.Trace;
             });
-            builder.Logging.SetMinimumLevel(LogLevel.Information);
+            // Set to Warning level to reduce verbosity for connection attempts
+            builder.Logging.SetMinimumLevel(LogLevel.Warning);
         }
 
         private static void RegisterServices(HostApplicationBuilder builder)
@@ -50,14 +51,14 @@ namespace McpUnity.DirectMcp
             builder.Services.AddSingleton<IUnityProjectLocator, UnityProjectLocator>();
             builder.Services.AddSingleton<IWebSocketConnectionManager, WebSocketConnectionManager>();
             builder.Services.AddSingleton<IUnityRpcClient, UnityRpcClient>();
-            
+
             // Business services
             builder.Services.AddSingleton<IUnityToolService, UnityToolService>();
             builder.Services.AddSingleton<IUnityResourceService, UnityResourceService>();
-            
+
             // Coordination service
             builder.Services.AddSingleton<UnityBridgeService>();
-            builder.Services.AddHostedService<UnityBridgeService>(provider => 
+            builder.Services.AddHostedService<UnityBridgeService>(provider =>
                 provider.GetRequiredService<UnityBridgeService>());
         }
 

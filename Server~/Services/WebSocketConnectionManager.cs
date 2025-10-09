@@ -55,7 +55,7 @@ namespace McpUnity.DirectMcp.Services
                 // Set a reasonable timeout
                 _webSocket.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
 
-                _logger.LogInformation("Connecting to Unity at {Uri}...", uri);
+                _logger.LogDebug("Connecting to Unity at {Uri}...", uri);
                 
                 using (var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
                 {
@@ -71,7 +71,7 @@ namespace McpUnity.DirectMcp.Services
                     }
                     catch (WebSocketException wsEx)
                     {
-                        _logger.LogError("WebSocket connection failed: {Message}", wsEx.Message);
+                        _logger.LogDebug("WebSocket connection failed: {Message}", wsEx.Message);
                         throw;
                     }
                 }

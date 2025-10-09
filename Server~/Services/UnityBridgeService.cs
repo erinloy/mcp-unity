@@ -21,9 +21,9 @@ namespace McpUnity.DirectMcp.Services
         private readonly IUnityRpcClient _rpcClient;
         private readonly ILogger<UnityBridgeService> _logger;
         private readonly IUnityToolService _toolService;
-        
+
         private string? _unityProjectPath;
-        private string _webSocketUri = "ws://localhost:8090/McpUnity";
+        private string? _webSocketUri;
         private Timer? _reconnectTimer;
         private readonly TimeSpan _reconnectInterval = TimeSpan.FromSeconds(5);
 
@@ -51,24 +51,43 @@ namespace McpUnity.DirectMcp.Services
             }
 
             _logger.LogInformation("Unity project: {ProjectPath}", _unityProjectPath);
-            
-            // Load settings
+
+            // Read port from this Unity instance's settings file - FAIL if missing
             var settingsPath = Path.Combine(_unityProjectPath, "ProjectSettings", "McpUnitySettings.json");
-            int port = 8090;
-            
-            if (File.Exists(settingsPath))
+
+            if (!File.Exists(settingsPath))
+            {
+                _logger.LogError("Settings file not found at: {SettingsPath}. Cannot determine WebSocket port for this Unity instance.", settingsPath);
+                return;
+            }
+
+            int port;
+            try
             {
                 var settingsJson = await File.ReadAllTextAsync(settingsPath, cancellationToken);
                 var settings = JObject.Parse(settingsJson);
-                port = settings["Port"]?.Value<int>() ?? 8090;
-                _logger.LogInformation("Loaded settings from {SettingsPath}", settingsPath);
+
+                if (settings["Port"] == null)
+                {
+                    _logger.LogError("Port not specified in settings file: {SettingsPath}", settingsPath);
+                    return;
+                }
+
+                port = settings["Port"]!.Value<int>();
+                _logger.LogInformation("Loaded port {Port} from settings file", port);
             }
-            
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to read settings file: {SettingsPath}", settingsPath);
+                return;
+            }
+
             _webSocketUri = $"ws://localhost:{port}/McpUnity";
-            
+            _logger.LogInformation("Connecting to Unity at: {Uri}", _webSocketUri);
+
             // Start initial connection
             _ = Task.Run(async () => await EnsureConnectedAsync(), cancellationToken);
-            
+
             // Start reconnection timer
             _reconnectTimer = new Timer(
                 async _ => await MonitorConnectionAsync(),
@@ -98,7 +117,7 @@ namespace McpUnity.DirectMcp.Services
             {
                 try
                 {
-                    _logger.LogInformation("Connecting to Unity at {Uri}...", _webSocketUri);
+                    _logger.LogDebug("Connecting to Unity at {Uri}...", _webSocketUri);
                     await _connectionManager.ConnectAsync(_webSocketUri);
                     _logger.LogInformation("Connected to Unity");
                     return;
@@ -118,7 +137,7 @@ namespace McpUnity.DirectMcp.Services
                 }
                 catch (WebSocketException wsEx)
                 {
-                    _logger.LogError("WebSocket connection failed at attempt {Attempt}: {Message}", 
+                    _logger.LogDebug("WebSocket connection failed at attempt {Attempt}: {Message}",
                         retryCount + 1, wsEx.Message);
                     
                     // If Unity isn't running or the server isn't started, wait longer
@@ -126,7 +145,7 @@ namespace McpUnity.DirectMcp.Services
                     if (retryCount < maxRetries)
                     {
                         var delay = TimeSpan.FromSeconds(Math.Min(retryCount * 5, 60));
-                        _logger.LogInformation("Unity may not be running. Waiting {Seconds} seconds before retry...", delay.TotalSeconds);
+                        _logger.LogDebug("Unity may not be running. Waiting {Seconds} seconds before retry...", delay.TotalSeconds);
                         await Task.Delay(delay);
                     }
                 }
