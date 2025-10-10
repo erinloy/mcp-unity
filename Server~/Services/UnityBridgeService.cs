@@ -85,10 +85,11 @@ namespace McpUnity.DirectMcp.Services
             _webSocketUri = $"ws://localhost:{port}/McpUnity";
             _logger.LogInformation("Connecting to Unity at: {Uri}", _webSocketUri);
 
-            // Start initial connection
-            _ = Task.Run(async () => await EnsureConnectedAsync(), cancellationToken);
+            // Wait for initial connection before considering the service started
+            // This ensures tools/list requests from Nexus will have a valid connection
+            await EnsureConnectedAsync();
 
-            // Start reconnection timer
+            // Start reconnection timer for maintaining connection
             _reconnectTimer = new Timer(
                 async _ => await MonitorConnectionAsync(),
                 null,
