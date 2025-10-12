@@ -168,7 +168,7 @@ namespace McpUnity.Unity
         }
         
         /// <summary>
-        /// Stop the WebSocket server
+        /// Stop the WebSocket server (non-blocking for domain reload safety)
         /// </summary>
         public void StopServer()
         {
@@ -194,33 +194,19 @@ namespace McpUnity.Unity
                 }
 
                 // Stop the server (this will close all active connections)
+                // Don't wait for completion - domain reload has strict time limits
                 _webSocketServer?.Stop();
-
-                // Wait for the socket to fully close before releasing the reference
-                // This prevents port binding issues during rapid restart (assembly reload)
-                int retries = 0;
-                while (_webSocketServer?.IsListening == true && retries < 20)
-                {
-                    System.Threading.Thread.Sleep(50);
-                    retries++;
-                }
-
-                if (_webSocketServer?.IsListening == true)
-                {
-                    McpLogger.LogWarning($"WebSocket server still listening after {retries * 50}ms - forcing cleanup anyway");
-                }
 
                 McpLogger.LogInfo("WebSocket server stopped");
             }
             catch (Exception ex)
             {
-                McpLogger.LogError($"Error during WebSocketServer.Stop(): {ex.Message}\n{ex.StackTrace}");
+                McpLogger.LogError($"Error during WebSocketServer.Stop(): {ex.Message}");
             }
             finally
             {
                 _webSocketServer = null;
                 Clients.Clear();
-                McpLogger.LogInfo("WebSocket server stopped and resources cleaned up.");
             }
         }
         
