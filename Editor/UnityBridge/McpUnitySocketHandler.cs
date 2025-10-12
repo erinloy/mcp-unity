@@ -135,13 +135,32 @@ namespace McpUnity.Unity
                     {
                         tcs.SetResult(CreateErrorResponse("Missing uri parameter", "invalid_params"));
                     }
-                    else if (_server.TryGetResource(uri, out var resource))
-                    {
-                        EditorCoroutineUtility.StartCoroutineOwnerless(FetchResourceCoroutine(resource, parameters, tcs));
-                    }
                     else
                     {
-                        tcs.SetResult(CreateErrorResponse($"Resource not found: {uri}", "resource_not_found"));
+                        // Try exact match first
+                        if (_server.TryGetResource(uri, out var resource))
+                        {
+                            EditorCoroutineUtility.StartCoroutineOwnerless(FetchResourceCoroutine(resource, parameters, tcs));
+                        }
+                        else
+                        {
+                            // Try URI template matching (e.g., unity://logs/all matches unity://logs/{logType})
+                            var matchedResource = TryMatchResourcePattern(uri, out var templateParams);
+                            if (matchedResource != null)
+                            {
+                                // Merge template parameters into the parameters object
+                                var mergedParams = parameters != null ? new JObject(parameters) : new JObject();
+                                foreach (var kvp in templateParams)
+                                {
+                                    mergedParams[kvp.Key] = kvp.Value;
+                                }
+                                EditorCoroutineUtility.StartCoroutineOwnerless(FetchResourceCoroutine(matchedResource, mergedParams, tcs));
+                            }
+                            else
+                            {
+                                tcs.SetResult(CreateErrorResponse($"Resource not found: {uri}", "resource_not_found"));
+                            }
+                        }
                     }
                 }
                 else if (method == "tools/call")
@@ -248,10 +267,21 @@ namespace McpUnity.Unity
             {
                 clientName = headers["X-Client-Name"];
             }
-            
+
+            // Clean up any existing connection with same client name (handles reconnection after sleep/resume)
+            var existingIds = _server.Clients.Where(kvp => kvp.Value == clientName && kvp.Key != ID).Select(kvp => kvp.Key).ToList();
+            if (existingIds.Count > 0)
+            {
+                McpLogger.LogInfo($"Cleaning up {existingIds.Count} stale connection(s) for client '{clientName}'");
+                foreach (var oldId in existingIds)
+                {
+                    _server.Clients.Remove(oldId);
+                }
+            }
+
             // Add the client to the server (always track, even without header)
             _server.Clients.Add(ID, clientName);
-            
+
             McpLogger.LogInfo($"WebSocket client '{clientName}' connected (ID: {ID})");
         }
         
@@ -361,6 +391,61 @@ namespace McpUnity.Unity
             return jsonRpcResponse;
         }
         
+        /// <summary>
+        /// Try to match a URI against resource patterns and extract template parameters
+        /// Example: unity://logs/all matches unity://logs/{logType} and extracts logType=all
+        /// </summary>
+        private McpResourceBase TryMatchResourcePattern(string uri, out Dictionary<string, string> templateParams)
+        {
+            templateParams = new Dictionary<string, string>();
+
+            var resources = _server.GetResources();
+            foreach (var resourceEntry in resources.Values)
+            {
+                var pattern = resourceEntry.Uri;
+
+                // Split both URI and pattern into segments
+                var uriParts = uri.Split('/');
+                var patternParts = pattern.Split('/');
+
+                // Must have same number of segments
+                if (uriParts.Length != patternParts.Length)
+                    continue;
+
+                bool isMatch = true;
+                var tempParams = new Dictionary<string, string>();
+
+                // Compare each segment
+                for (int i = 0; i < uriParts.Length; i++)
+                {
+                    var patternPart = patternParts[i];
+                    var uriPart = uriParts[i];
+
+                    // Check if pattern part is a template parameter {param}
+                    if (patternPart.StartsWith("{") && patternPart.EndsWith("}"))
+                    {
+                        // Extract parameter name and value
+                        var paramName = patternPart.Substring(1, patternPart.Length - 2);
+                        tempParams[paramName] = uriPart;
+                    }
+                    else if (patternPart != uriPart)
+                    {
+                        // Literal segments must match exactly
+                        isMatch = false;
+                        break;
+                    }
+                }
+
+                if (isMatch)
+                {
+                    templateParams = tempParams;
+                    return resourceEntry;
+                }
+            }
+
+            return null;
+        }
+
         /// <summary>
         /// Get method signature for discovery
         /// </summary>

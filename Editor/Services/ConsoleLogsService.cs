@@ -91,11 +91,13 @@ namespace McpUnity.Services
         {
             // Convert log entries to a JSON array, filtering by logType if provided
             JArray logsArray = new JArray();
-            bool filter = !string.IsNullOrEmpty(logType);
+
+            // Treat "all" as no filter (same as null/empty)
+            bool filter = !string.IsNullOrEmpty(logType) && !logType.Equals("all", StringComparison.OrdinalIgnoreCase);
             int totalCount = 0;
             int filteredCount = 0;
             int currentIndex = 0;
-            
+
             // Map MCP log types to Unity log types outside the loop for better performance
             HashSet<string> unityLogTypes = null;
             if (filter)

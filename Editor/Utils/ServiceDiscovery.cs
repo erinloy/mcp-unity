@@ -95,18 +95,56 @@ namespace McpUnity.Utils
         /// </summary>
         private static string GenerateMcpInstanceId(string projectName)
         {
+            // Handle empty or invalid project names
+            if (string.IsNullOrWhiteSpace(projectName))
+            {
+                projectName = "unity-project";
+            }
+
             // Convert to lowercase and replace spaces/special chars
             string baseId = projectName.ToLower()
                 .Replace(" ", "-")
                 .Replace(".", "-")
                 .Replace("_", "-");
-            
+
+            // Remove consecutive dashes and trim
+            while (baseId.Contains("--"))
+            {
+                baseId = baseId.Replace("--", "-");
+            }
+            baseId = baseId.Trim('-');
+
+            // If the ID is now empty or just dashes, use project path as fallback
+            if (string.IsNullOrWhiteSpace(baseId) || baseId.All(c => c == '-'))
+            {
+                // Extract folder name from project path
+                string folderName = Path.GetFileName(Path.GetDirectoryName(Application.dataPath));
+                if (!string.IsNullOrWhiteSpace(folderName))
+                {
+                    baseId = folderName.ToLower()
+                        .Replace(" ", "-")
+                        .Replace(".", "-")
+                        .Replace("_", "-");
+                    while (baseId.Contains("--"))
+                    {
+                        baseId = baseId.Replace("--", "-");
+                    }
+                    baseId = baseId.Trim('-');
+                }
+
+                // Final fallback
+                if (string.IsNullOrWhiteSpace(baseId))
+                {
+                    baseId = "unity-project";
+                }
+            }
+
             // Prefix with "unity-" if not already
             if (!baseId.StartsWith("unity-"))
             {
                 baseId = "unity-" + baseId;
             }
-            
+
             return baseId;
         }
         

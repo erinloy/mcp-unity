@@ -130,6 +130,11 @@ namespace McpUnity.Unity
                 var host = "127.0.0.1";
                 _webSocketServer = new WebSocketServer($"ws://{host}:{McpUnitySettings.Instance.Port}");
                 _webSocketServer.ReuseAddress = true;
+
+                // Enable keepalive to detect stale connections (ping every 30s, timeout after 60s)
+                _webSocketServer.KeepClean = true;  // Auto-clean dead connections
+                _webSocketServer.WaitTime = TimeSpan.FromSeconds(60);  // Connection timeout
+
                 _webSocketServer.Log.Level = WebSocketSharp.LogLevel.Debug;
                 _webSocketServer.Log.Output = (data, path) => {
                     McpLogger.LogInfo($"[WebSocketSharp] {data.Message}");
@@ -174,8 +179,37 @@ namespace McpUnity.Unity
 
             try
             {
-                _webSocketServer?.Stop(); 
-                
+                // Log active connections before stopping
+                if (_webSocketServer?.WebSocketServices != null)
+                {
+                    var servicePath = "/McpUnity";
+                    if (_webSocketServer.WebSocketServices.TryGetServiceHost(servicePath, out var host))
+                    {
+                        var sessionsCount = host.Sessions.Count;
+                        if (sessionsCount > 0)
+                        {
+                            McpLogger.LogInfo($"Stopping server with {sessionsCount} active WebSocket connection(s)");
+                        }
+                    }
+                }
+
+                // Stop the server (this will close all active connections)
+                _webSocketServer?.Stop();
+
+                // Wait for the socket to fully close before releasing the reference
+                // This prevents port binding issues during rapid restart (assembly reload)
+                int retries = 0;
+                while (_webSocketServer?.IsListening == true && retries < 20)
+                {
+                    System.Threading.Thread.Sleep(50);
+                    retries++;
+                }
+
+                if (_webSocketServer?.IsListening == true)
+                {
+                    McpLogger.LogWarning($"WebSocket server still listening after {retries * 50}ms - forcing cleanup anyway");
+                }
+
                 McpLogger.LogInfo("WebSocket server stopped");
             }
             catch (Exception ex)
@@ -184,8 +218,8 @@ namespace McpUnity.Unity
             }
             finally
             {
-                _webSocketServer = null; 
-                Clients.Clear(); 
+                _webSocketServer = null;
+                Clients.Clear();
                 McpLogger.LogInfo("WebSocket server stopped and resources cleaned up.");
             }
         }
