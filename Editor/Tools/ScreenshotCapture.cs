@@ -183,75 +183,35 @@ namespace McpUnity.Tools
         {
             try
             {
-                var gameViewType = System.Type.GetType("UnityEditor.GameView,UnityEditor");
-                if (gameViewType == null)
+                // Find the main camera (works without focus)
+                Camera camera = Camera.main;
+                if (camera == null)
                 {
-                    Debug.LogError("[MCP Unity] Cannot find GameView type");
+                    // Try to find any camera
+                    camera = UnityEngine.Object.FindFirstObjectByType<Camera>();
+                }
+
+                if (camera == null)
+                {
+                    Debug.LogWarning("[MCP Unity] No camera found in scene for Game view capture");
                     return null;
                 }
 
-                var gameView = EditorWindow.GetWindow(gameViewType, false, null, false);
-                if (gameView == null)
-                {
-                    Debug.LogError("[MCP Unity] Cannot get Game view window");
-                    return null;
-                }
+                // Determine capture dimensions
+                int captureWidth = width > 0 ? width : Screen.width;
+                int captureHeight = height > 0 ? height : Screen.height;
 
-                // Force focus and repaint
-                gameView.Focus();
-                gameView.Repaint();
-
-                // Wait a frame for the repaint to complete
-                System.Threading.Thread.Sleep(50);
-
-                // Try to get the RenderTexture using reflection
-                RenderTexture renderTexture = null;
-
-                // Method 1: Try to get via targetRenderTexture property
-                var targetRenderTextureProp = gameViewType.GetProperty("targetRenderTexture",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                if (targetRenderTextureProp != null)
-                {
-                    renderTexture = targetRenderTextureProp.GetValue(gameView) as RenderTexture;
-                }
-
-                // Method 2: Try via GetMainGameViewRenderTexture static method
-                if (renderTexture == null)
-                {
-                    var getMainRenderTextureMethod = gameViewType.GetMethod("GetMainGameViewRenderTexture",
-                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-                    if (getMainRenderTextureMethod != null)
-                    {
-                        renderTexture = getMainRenderTextureMethod.Invoke(null, null) as RenderTexture;
-                    }
-                }
-
-                // Method 3: Try via GetRenderTexture instance method
-                if (renderTexture == null)
-                {
-                    var getRenderTextureMethod = gameViewType.GetMethod("GetRenderTexture",
-                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    if (getRenderTextureMethod != null)
-                    {
-                        renderTexture = getRenderTextureMethod.Invoke(gameView, null) as RenderTexture;
-                    }
-                }
-
-                if (renderTexture == null)
-                {
-                    Debug.LogError("[MCP Unity] Cannot access Game view render texture. Make sure the Game view is visible and rendering.");
-                    return null;
-                }
-
-                // Capture from the render texture
-                int captureWidth = width > 0 ? width : renderTexture.width;
-                int captureHeight = height > 0 ? height : renderTexture.height;
-
+                // Create render texture
+                var renderTexture = RenderTexture.GetTemporary(captureWidth, captureHeight, 24);
+                var previousRT = camera.targetTexture;
                 var previousActive = RenderTexture.active;
-                RenderTexture.active = renderTexture;
 
                 try
                 {
+                    camera.targetTexture = renderTexture;
+                    camera.Render();
+
+                    RenderTexture.active = renderTexture;
                     var texture2D = new Texture2D(captureWidth, captureHeight, TextureFormat.RGB24, false);
                     texture2D.ReadPixels(new Rect(0, 0, captureWidth, captureHeight), 0, 0);
                     texture2D.Apply();
@@ -270,12 +230,14 @@ namespace McpUnity.Tools
                 }
                 finally
                 {
+                    camera.targetTexture = previousRT;
                     RenderTexture.active = previousActive;
+                    RenderTexture.ReleaseTemporary(renderTexture);
                 }
             }
             catch (Exception ex)
             {
-                Debug.Log($"[MCP Unity] Editor capture method failed (expected in some Unity versions): {ex.Message}");
+                Debug.LogError($"[MCP Unity] Failed to capture Game view: {ex.Message}");
                 return null;
             }
         }
