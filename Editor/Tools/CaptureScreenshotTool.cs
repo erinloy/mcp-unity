@@ -28,10 +28,10 @@ namespace McpUnity.Tools
         {
             try
             {
-                // Parse parameters
+                // Parse parameters with reasonable defaults
                 string viewType = parameters["viewType"]?.ToObject<string>() ?? "game";
-                int width = parameters["width"]?.ToObject<int>() ?? 0;
-                int height = parameters["height"]?.ToObject<int>() ?? 0;
+                int width = parameters["width"]?.ToObject<int>() ?? 640;  // Default to 640x480 for manageable size
+                int height = parameters["height"]?.ToObject<int>() ?? 480;
                 bool saveToFile = parameters["saveToFile"]?.ToObject<bool>() ?? false;
                 string filePath = parameters["filePath"]?.ToObject<string>();
                 
@@ -76,31 +76,20 @@ namespace McpUnity.Tools
 
                             foreach (var screenshot in screenshots)
                             {
-                                var dataUrl = screenshot["data"] as string;
-                                if (!string.IsNullOrEmpty(dataUrl))
-                                {
-                                    // Extract base64 data from data URL
-                                    string base64Data = dataUrl;
-                                    if (dataUrl.StartsWith("data:image/png;base64,"))
-                                    {
-                                        base64Data = dataUrl.Substring("data:image/png;base64,".Length);
-                                    }
+                                var base64Data = screenshot["data"] as string;
+                                var mimeType = screenshot.ContainsKey("mimeType")
+                                    ? screenshot["mimeType"] as string
+                                    : "image/jpeg";
 
+                                if (!string.IsNullOrEmpty(base64Data))
+                                {
                                     contentArray.Add(new
                                     {
                                         type = "image",
                                         data = base64Data,
-                                        mimeType = "image/png"
+                                        mimeType = mimeType
                                     });
                                 }
-
-                                // Also add text description
-                                contentArray.Add(new
-                                {
-                                    type = "text",
-                                    text = $"Screenshot captured from {screenshot["type"]} view " +
-                                           $"({screenshot["width"]}x{screenshot["height"]}) at {screenshot.GetValueOrDefault("timestamp", DateTime.UtcNow.ToString("o"))}"
-                                });
                             }
 
                             return JObject.FromObject(new

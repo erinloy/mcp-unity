@@ -151,16 +151,17 @@ namespace McpUnity.Tools
                     texture2D.ReadPixels(new Rect(0, 0, captureWidth, captureHeight), 0, 0);
                     texture2D.Apply();
 
-                    // Convert to PNG and then to base64
-                    byte[] pngData = texture2D.EncodeToPNG();
-                    string base64Data = Convert.ToBase64String(pngData);
+                    // Convert to JPEG (much smaller than PNG) with 75% quality
+                    byte[] jpegData = texture2D.EncodeToJPG(75);
+                    string base64Data = Convert.ToBase64String(jpegData);
 
                     // Clean up
                     UnityEngine.Object.DestroyImmediate(texture2D);
 
                     return new Dictionary<string, object>
                     {
-                        ["data"] = $"data:image/png;base64,{base64Data}",
+                        ["data"] = base64Data, // MCP format: just base64, no data URL prefix
+                        ["mimeType"] = "image/jpeg",
                         ["width"] = captureWidth,
                         ["height"] = captureHeight
                     };
@@ -216,14 +217,16 @@ namespace McpUnity.Tools
                     texture2D.ReadPixels(new Rect(0, 0, captureWidth, captureHeight), 0, 0);
                     texture2D.Apply();
 
-                    byte[] pngData = texture2D.EncodeToPNG();
-                    string base64Data = Convert.ToBase64String(pngData);
+                    // Convert to JPEG (much smaller than PNG) with 75% quality
+                    byte[] jpegData = texture2D.EncodeToJPG(75);
+                    string base64Data = Convert.ToBase64String(jpegData);
 
                     UnityEngine.Object.DestroyImmediate(texture2D);
 
                     return new Dictionary<string, object>
                     {
-                        ["data"] = $"data:image/png;base64,{base64Data}",
+                        ["data"] = base64Data, // MCP format: just base64, no data URL prefix
+                        ["mimeType"] = "image/jpeg",
                         ["width"] = captureWidth,
                         ["height"] = captureHeight
                     };
@@ -288,22 +291,32 @@ namespace McpUnity.Tools
 
                 foreach (var shot in screenshots)
                 {
-                    string dataUrl = shot["data"] as string;
-                    string base64Data = dataUrl.Substring(dataUrl.IndexOf(',') + 1);
-                    byte[] pngData = Convert.FromBase64String(base64Data);
-                    
+                    string base64Data = shot["data"] as string;
+                    byte[] imageData = Convert.FromBase64String(base64Data);
+
                     string shotType = shot["type"] as string;
+                    string mimeType = shot.ContainsKey("mimeType")
+                        ? shot["mimeType"] as string
+                        : "image/jpeg";
+                    string extension = mimeType == "image/jpeg" ? ".jpg" : ".png";
+
                     string shotPath = filePath;
-                    
+
                     if (screenshots.Count > 1)
                     {
                         // Add type suffix if capturing both views
-                        shotPath = filePath.Replace(".png", $"_{shotType}.png");
+                        shotPath = shotPath.Replace(extension, $"_{shotType}{extension}");
                     }
-                    
-                    File.WriteAllBytes(shotPath, pngData);
+
+                    // Ensure correct extension
+                    if (!shotPath.EndsWith(extension))
+                    {
+                        shotPath = Path.ChangeExtension(shotPath, extension.TrimStart('.'));
+                    }
+
+                    File.WriteAllBytes(shotPath, imageData);
                     savedFiles.Add(shotPath);
-                    
+
                     Debug.Log($"[MCP Unity] Screenshot saved: {shotPath}");
                 }
 
