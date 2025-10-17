@@ -82,7 +82,7 @@ namespace McpUnity.DirectMcp.Services
                 return;
             }
 
-            _webSocketUri = $"ws://localhost:{port}/McpUnity";
+            _webSocketUri = $"ws://127.0.0.1:{port}/McpUnity";
             _logger.LogInformation("Connecting to Unity at: {Uri}", _webSocketUri);
 
             // Wait for initial connection before considering the service started
