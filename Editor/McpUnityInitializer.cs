@@ -88,32 +88,16 @@ namespace McpUnity
         
         private static void OnBeforeReload()
         {
+            // COMPLETE NO-OP to prevent Unity freeze during domain reload
+            // Any cleanup, even lightweight, can block Unity's assembly reload
+            // The MCP server will reinitialize automatically after reload
+
             if (!_hasInitialized)
                 return;
-                
-            try
-            {
-                McpLogger.LogInfo("[MCP] Domain reload detected - performing safe cleanup...");
-                
-                // Clean up notifications first (lightweight)
-                UnityNotificationCollector.Cleanup();
-                
-                // Stop server without blocking
-                var server = McpUnityServer.Instance;
-                if (server != null)
-                {
-                    // Don't dispose, just stop - let GC handle cleanup
-                    server.StopServer();
-                }
-                
-                _hasInitialized = false;
-                McpLogger.LogInfo("[MCP] Cleanup complete");
-            }
-            catch (Exception ex)
-            {
-                // Log but don't throw - we don't want to break domain reload
-                Debug.LogError($"[MCP] Error during cleanup: {ex.Message}");
-            }
+
+            _hasInitialized = false;
+
+            // NO cleanup - not even logging - to ensure fastest possible reload
         }
     }
 }

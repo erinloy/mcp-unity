@@ -115,6 +115,7 @@ namespace McpUnity.Unity
         
         /// <summary>
         /// Start the WebSocket Server to communicate with Node.js
+        /// Includes retry logic for port conflicts during domain reload
         /// </summary>
         public void StartServer()
         {
@@ -124,51 +125,72 @@ namespace McpUnity.Unity
                 return;
             }
 
-            try
-            {
-                // Always use 127.0.0.1 for now - WebSocketSharp has issues with 0.0.0.0 binding
-                var host = "127.0.0.1";
-                _webSocketServer = new WebSocketServer($"ws://{host}:{McpUnitySettings.Instance.Port}");
-                _webSocketServer.ReuseAddress = true;
+            const int maxRetries = 3;
+            const int retryDelayMs = 200;
 
-                // Enable keepalive to detect stale connections (ping every 30s, timeout after 60s)
-                _webSocketServer.KeepClean = true;  // Auto-clean dead connections
-                _webSocketServer.WaitTime = TimeSpan.FromSeconds(60);  // Connection timeout
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    // Always use 127.0.0.1 for now - WebSocketSharp has issues with 0.0.0.0 binding
+                    var host = "127.0.0.1";
+                    _webSocketServer = new WebSocketServer($"ws://{host}:{McpUnitySettings.Instance.Port}");
 
-                _webSocketServer.Log.Level = WebSocketSharp.LogLevel.Debug;
-                _webSocketServer.Log.Output = (data, path) => {
-                    McpLogger.LogInfo($"[WebSocketSharp] {data.Message}");
-                };
-                _webSocketServer.AddWebSocketService("/McpUnity", () => new McpUnitySocketHandler(this));
-                _webSocketServer.Start();
-                
-                // Verify the server is actually listening
-                if (_webSocketServer.IsListening)
-                {
-                    McpLogger.LogInfo($"✅ WebSocket server verified listening on {host}:{McpUnitySettings.Instance.Port}");
-                    McpLogger.LogInfo($"   Endpoint: ws://{host}:{McpUnitySettings.Instance.Port}/McpUnity");
+                    // Enable address reuse to handle rapid restart scenarios (domain reload)
+                    _webSocketServer.ReuseAddress = true;
+
+                    // Enable keepalive to detect stale connections (ping every 30s, timeout after 60s)
+                    _webSocketServer.KeepClean = true;  // Auto-clean dead connections
+                    _webSocketServer.WaitTime = TimeSpan.FromSeconds(60);  // Connection timeout
+
+                    _webSocketServer.Log.Level = WebSocketSharp.LogLevel.Debug;
+                    _webSocketServer.Log.Output = (data, path) => {
+                        McpLogger.LogInfo($"[WebSocketSharp] {data.Message}");
+                    };
+                    _webSocketServer.AddWebSocketService("/McpUnity", () => new McpUnitySocketHandler(this));
+                    _webSocketServer.Start();
+
+                    // Verify the server is actually listening
+                    if (_webSocketServer.IsListening)
+                    {
+                        McpLogger.LogInfo($"✅ WebSocket server verified listening on {host}:{McpUnitySettings.Instance.Port}");
+                        McpLogger.LogInfo($"   Endpoint: ws://{host}:{McpUnitySettings.Instance.Port}/McpUnity");
+
+                        // Register with service discovery
+                        ServiceDiscovery.RegisterService(McpUnitySettings.Instance.Port);
+                        return; // Success
+                    }
+                    else
+                    {
+                        McpLogger.LogError($"WebSocket server failed to start listening on {host}:{McpUnitySettings.Instance.Port}");
+                        throw new System.InvalidOperationException("WebSocket server is not listening after Start() call");
+                    }
                 }
-                else
+                catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse)
                 {
-                    McpLogger.LogError($"WebSocket server failed to start listening on {host}:{McpUnitySettings.Instance.Port}");
-                    throw new System.InvalidOperationException("WebSocket server is not listening after Start() call");
+                    _webSocketServer = null;
+
+                    if (attempt < maxRetries)
+                    {
+                        McpLogger.LogWarning($"Port {McpUnitySettings.Instance.Port} still in use (attempt {attempt}/{maxRetries}). Retrying in {retryDelayMs}ms...");
+                        System.Threading.Thread.Sleep(retryDelayMs);
+                    }
+                    else
+                    {
+                        McpLogger.LogError($"Failed to start WebSocket server after {maxRetries} attempts: Port {McpUnitySettings.Instance.Port} is still in use. {ex.Message}");
+                    }
                 }
-                
-                // Register with service discovery
-                ServiceDiscovery.RegisterService(McpUnitySettings.Instance.Port);
-            }
-            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse)
-            {
-                McpLogger.LogError($"Failed to start WebSocket server: Port {McpUnitySettings.Instance.Port} is already in use. {ex.Message}");
-            }
-            catch (Exception ex)
-            {
-                McpLogger.LogError($"Failed to start WebSocket server: {ex.Message}\n{ex.StackTrace}");
+                catch (Exception ex)
+                {
+                    _webSocketServer = null;
+                    McpLogger.LogError($"Failed to start WebSocket server: {ex.Message}\n{ex.StackTrace}");
+                    return; // Don't retry on other exceptions
+                }
             }
         }
         
         /// <summary>
-        /// Stop the WebSocket server (non-blocking for domain reload safety)
+        /// Stop the WebSocket server and properly release the port
         /// </summary>
         public void StopServer()
         {
@@ -194,7 +216,7 @@ namespace McpUnity.Unity
                 }
 
                 // Stop the server (this will close all active connections)
-                // Don't wait for completion - domain reload has strict time limits
+                // WebSocketSharp.Stop() is synchronous - setting ReuseAddress=true should handle rapid restarts
                 _webSocketServer?.Stop();
 
                 McpLogger.LogInfo("WebSocket server stopped");
@@ -453,15 +475,30 @@ namespace McpUnity.Unity
 
         /// <summary>
         /// Handles the Unity Editor quitting event. Ensures the server is properly stopped and disposed.
+        /// Must be non-blocking to avoid hanging Unity's quit sequence.
         /// </summary>
         private static void OnEditorQuitting()
         {
-            McpLogger.LogInfo("Editor is quitting. Ensuring server is stopped.");
-            Instance.Dispose();
-            // Release the port allocation for this Unity instance
-            PortManager.ReleasePort();
-            // Unregister from service discovery
-            ServiceDiscovery.UnregisterService();
+            // Non-blocking cleanup - Unity is quitting anyway, the port will be released by OS
+            try
+            {
+                if (Instance.IsListening)
+                {
+                    // Stop without waiting for port release - Unity is shutting down
+                    Instance._webSocketServer?.Stop();
+                    Instance._webSocketServer = null;
+                }
+
+                // Release the port allocation for this Unity instance
+                PortManager.ReleasePort();
+                // Unregister from service discovery
+                ServiceDiscovery.UnregisterService();
+            }
+            catch (Exception ex)
+            {
+                // Catch all errors - don't block Unity quit
+                McpLogger.LogWarning($"Non-fatal error during quit cleanup: {ex.Message}");
+            }
         }
 
         /// <summary>
