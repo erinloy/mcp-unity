@@ -106,10 +106,29 @@ namespace McpUnity.DirectMcp.Services
 
         public async Task<CallToolResult> CallToolAsync(string name, Dictionary<string, object>? arguments, CancellationToken cancellationToken = default)
         {
+            // Convert arguments, handling JsonElement values from System.Text.Json
+            JObject argumentsObj = new JObject();
+            if (arguments != null)
+            {
+                foreach (var kvp in arguments)
+                {
+                    if (kvp.Value is JsonElement jsonElement)
+                    {
+                        // Convert JsonElement to JToken by serializing and deserializing
+                        var json = JsonSerializer.Serialize(jsonElement);
+                        argumentsObj[kvp.Key] = JToken.Parse(json);
+                    }
+                    else
+                    {
+                        argumentsObj[kvp.Key] = JToken.FromObject(kvp.Value);
+                    }
+                }
+            }
+
             var parameters = new JObject
             {
                 ["name"] = name,
-                ["arguments"] = arguments != null ? JObject.FromObject(arguments) : new JObject()
+                ["arguments"] = argumentsObj
             };
 
             var response = await _rpcClient.SendRequestAsync("tools/call", parameters, cancellationToken);
