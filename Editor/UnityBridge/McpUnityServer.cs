@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using UnityEngine;
 using UnityEditor;
@@ -31,6 +32,7 @@ namespace McpUnity.Unity
         private CancellationTokenSource _cts;
         private TestRunnerService _testRunnerService;
         private ConsoleLogsService _consoleLogsService;
+        private bool _isStartingServer;  // Prevent concurrent StartServer calls
 
         /// <summary>
         /// Static constructor that gets called when Unity loads due to InitializeOnLoad attribute
@@ -40,6 +42,13 @@ namespace McpUnity.Unity
             EditorApplication.delayCall += () => {
                 // Ensure Instance is created and hooks are set up after initial domain load
                 var currentInstance = Instance;
+
+                // Ensure server is started after domain reload (assembly reload events fire before this)
+                if (McpUnitySettings.Instance.AutoStartServer && !currentInstance.IsListening)
+                {
+                    McpLogger.LogInfo("Starting server after domain reload...");
+                    currentInstance.StartServer();
+                }
             };
         }
         
@@ -64,6 +73,46 @@ namespace McpUnity.Unity
         public bool IsListening => _webSocketServer?.IsListening ?? false;
 
         /// <summary>
+        /// Time of last successful client connection (for health monitoring)
+        /// </summary>
+        private DateTime _lastConnectionTime = DateTime.MinValue;
+
+        /// <summary>
+        /// Track when server was started for health check grace period
+        /// </summary>
+        private DateTime _serverStartTime = DateTime.MinValue;
+
+        /// <summary>
+        /// Last time we performed a health check
+        /// </summary>
+        private double _lastHealthCheckTime;
+
+        /// <summary>
+        /// How often to check server health (seconds)
+        /// </summary>
+        private const float HealthCheckIntervalSeconds = 5f;
+
+        /// <summary>
+        /// Grace period after server start before health checks begin (seconds)
+        /// </summary>
+        private const float HealthCheckGracePeriodSeconds = 3f;
+
+        /// <summary>
+        /// Count of consecutive health check failures (to avoid false positives)
+        /// </summary>
+        private int _consecutiveHealthFailures;
+
+        /// <summary>
+        /// Number of consecutive failures before auto-recovery triggers
+        /// </summary>
+        private const int HealthFailureThreshold = 2;
+
+        /// <summary>
+        /// Whether auto-healing is enabled
+        /// </summary>
+        private bool _autoHealingEnabled = true;
+
+        /// <summary>
         /// Dictionary of connected clients with this server
         /// </summary>
         public Dictionary<string, string> Clients { get; } = new Dictionary<string, string>();
@@ -85,15 +134,35 @@ namespace McpUnity.Unity
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
 
+            // Subscribe to update for periodic health checks
+            EditorApplication.update -= OnEditorUpdate;
+            EditorApplication.update += OnEditorUpdate;
+
             InstallServer();
             InitializeServices();
             RegisterResources();
             RegisterTools();
 
-            // Initial start if auto-start is enabled and not recovering from a reload where it was off
+            // Initial start if auto-start is enabled
             if (McpUnitySettings.Instance.AutoStartServer)
             {
-                 StartServer();
+                try
+                {
+                    StartServer();
+                }
+                catch (Exception ex)
+                {
+                    McpLogger.LogError($"Failed to start server in constructor: {ex.Message}");
+                    // Schedule retry
+                    EditorApplication.delayCall += () =>
+                    {
+                        if (!IsListening && McpUnitySettings.Instance.AutoStartServer)
+                        {
+                            McpLogger.LogInfo("Retrying server start...");
+                            StartServer();
+                        }
+                    };
+                }
             }
         }
 
@@ -109,6 +178,7 @@ namespace McpUnity.Unity
             AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
             AssemblyReloadEvents.afterAssemblyReload -= OnAfterAssemblyReload;
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+            EditorApplication.update -= OnEditorUpdate;
 
             GC.SuppressFinalize(this);
         }
@@ -125,67 +195,110 @@ namespace McpUnity.Unity
                 return;
             }
 
-            const int maxRetries = 3;
-            const int retryDelayMs = 200;
-
-            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            // Prevent concurrent StartServer calls (can happen during domain reload from multiple sources)
+            if (_isStartingServer)
             {
+                McpLogger.LogInfo("Server start already in progress, skipping duplicate request.");
+                return;
+            }
+            _isStartingServer = true;
+
+            // Ensure any previous server is fully stopped before starting new one
+            if (_webSocketServer != null)
+            {
+                McpLogger.LogWarning("Previous WebSocket server instance exists - cleaning up before starting new one.");
                 try
                 {
-                    // Always use 127.0.0.1 for now - WebSocketSharp has issues with 0.0.0.0 binding
-                    var host = "127.0.0.1";
-                    _webSocketServer = new WebSocketServer($"ws://{host}:{McpUnitySettings.Instance.Port}");
-
-                    // Enable address reuse to handle rapid restart scenarios (domain reload)
-                    _webSocketServer.ReuseAddress = true;
-
-                    // Enable keepalive to detect stale connections (ping every 30s, timeout after 60s)
-                    _webSocketServer.KeepClean = true;  // Auto-clean dead connections
-                    _webSocketServer.WaitTime = TimeSpan.FromSeconds(60);  // Connection timeout
-
-                    _webSocketServer.Log.Level = WebSocketSharp.LogLevel.Debug;
-                    _webSocketServer.Log.Output = (data, path) => {
-                        McpLogger.LogInfo($"[WebSocketSharp] {data.Message}");
-                    };
-                    _webSocketServer.AddWebSocketService("/McpUnity", () => new McpUnitySocketHandler(this));
-                    _webSocketServer.Start();
-
-                    // Verify the server is actually listening
-                    if (_webSocketServer.IsListening)
-                    {
-                        McpLogger.LogInfo($"✅ WebSocket server verified listening on {host}:{McpUnitySettings.Instance.Port}");
-                        McpLogger.LogInfo($"   Endpoint: ws://{host}:{McpUnitySettings.Instance.Port}/McpUnity");
-
-                        // Register with service discovery
-                        ServiceDiscovery.RegisterService(McpUnitySettings.Instance.Port);
-                        return; // Success
-                    }
-                    else
-                    {
-                        McpLogger.LogError($"WebSocket server failed to start listening on {host}:{McpUnitySettings.Instance.Port}");
-                        throw new System.InvalidOperationException("WebSocket server is not listening after Start() call");
-                    }
-                }
-                catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse)
-                {
-                    _webSocketServer = null;
-
-                    if (attempt < maxRetries)
-                    {
-                        McpLogger.LogWarning($"Port {McpUnitySettings.Instance.Port} still in use (attempt {attempt}/{maxRetries}). Retrying in {retryDelayMs}ms...");
-                        System.Threading.Thread.Sleep(retryDelayMs);
-                    }
-                    else
-                    {
-                        McpLogger.LogError($"Failed to start WebSocket server after {maxRetries} attempts: Port {McpUnitySettings.Instance.Port} is still in use. {ex.Message}");
-                    }
+                    _webSocketServer.Stop();
                 }
                 catch (Exception ex)
                 {
-                    _webSocketServer = null;
-                    McpLogger.LogError($"Failed to start WebSocket server: {ex.Message}\n{ex.StackTrace}");
-                    return; // Don't retry on other exceptions
+                    McpLogger.LogWarning($"Error stopping previous server: {ex.Message}");
                 }
+                _webSocketServer = null;
+                Clients.Clear();
+            }
+
+            const int maxRetries = 3;
+            const int retryDelayMs = 200;
+
+            try
+            {
+                for (int attempt = 1; attempt <= maxRetries; attempt++)
+                {
+                    try
+                    {
+                        // Always use 127.0.0.1 for now - WebSocketSharp has issues with 0.0.0.0 binding
+                        var host = "127.0.0.1";
+                        _webSocketServer = new WebSocketServer($"ws://{host}:{McpUnitySettings.Instance.Port}");
+
+                        // Enable address reuse to handle rapid restart scenarios (domain reload)
+                        _webSocketServer.ReuseAddress = true;
+
+                        // Enable keepalive to detect stale connections
+                        _webSocketServer.KeepClean = true;  // Auto-clean dead connections
+                        _webSocketServer.WaitTime = TimeSpan.FromSeconds(2);  // Short timeout to avoid blocking Unity
+
+                        _webSocketServer.Log.Level = WebSocketSharp.LogLevel.Debug;
+                        _webSocketServer.Log.Output = (data, path) => {
+                            // Filter out benign connection errors (stale connections, malformed requests, etc.)
+                            var message = data.Message;
+                            if (message != null && (
+                                message.Contains("EndOfStreamException") ||
+                                message.Contains("The header cannot be read from the data source") ||
+                                message.Contains("An exception has occurred while reading an HTTP request/response")
+                            ))
+                            {
+                                // These are benign errors from stale/malformed connections - ignore them
+                                return;
+                            }
+                            McpLogger.LogInfo($"[WebSocketSharp] {message}");
+                        };
+                        _webSocketServer.AddWebSocketService("/McpUnity", () => new McpUnitySocketHandler(this));
+                        _webSocketServer.Start();
+
+                        // Verify the server is actually listening
+                        if (_webSocketServer.IsListening)
+                        {
+                            _serverStartTime = DateTime.UtcNow;
+                            McpLogger.LogInfo($"✅ WebSocket server verified listening on {host}:{McpUnitySettings.Instance.Port}");
+                            McpLogger.LogInfo($"   Endpoint: ws://{host}:{McpUnitySettings.Instance.Port}/McpUnity");
+
+                            // Register with service discovery
+                            ServiceDiscovery.RegisterService(McpUnitySettings.Instance.Port);
+                            return; // Success
+                        }
+                        else
+                        {
+                            McpLogger.LogError($"WebSocket server failed to start listening on {host}:{McpUnitySettings.Instance.Port}");
+                            throw new System.InvalidOperationException("WebSocket server is not listening after Start() call");
+                        }
+                    }
+                    catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse)
+                    {
+                        _webSocketServer = null;
+
+                        if (attempt < maxRetries)
+                        {
+                            McpLogger.LogWarning($"Port {McpUnitySettings.Instance.Port} still in use (attempt {attempt}/{maxRetries}). Retrying in {retryDelayMs}ms...");
+                            System.Threading.Thread.Sleep(retryDelayMs);
+                        }
+                        else
+                        {
+                            McpLogger.LogError($"Failed to start WebSocket server after {maxRetries} attempts: Port {McpUnitySettings.Instance.Port} is still in use. {ex.Message}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _webSocketServer = null;
+                        McpLogger.LogError($"Failed to start WebSocket server: {ex.Message}\n{ex.StackTrace}");
+                        return; // Don't retry on other exceptions
+                    }
+                }
+            }
+            finally
+            {
+                _isStartingServer = false;
             }
         }
         
@@ -201,7 +314,7 @@ namespace McpUnity.Unity
 
             try
             {
-                // Log active connections before stopping
+                // Explicitly close all active sessions before stopping server
                 if (_webSocketServer?.WebSocketServices != null)
                 {
                     var servicePath = "/McpUnity";
@@ -210,13 +323,20 @@ namespace McpUnity.Unity
                         var sessionsCount = host.Sessions.Count;
                         if (sessionsCount > 0)
                         {
-                            McpLogger.LogInfo($"Stopping server with {sessionsCount} active WebSocket connection(s)");
+                            McpLogger.LogInfo($"Closing {sessionsCount} active WebSocket connection(s) before server stop");
+                            // Close each session individually
+                            foreach (var sessionId in host.Sessions.IDs.ToArray())
+                            {
+                                host.Sessions.CloseSession(sessionId, WebSocketSharp.CloseStatusCode.Normal, "Server shutting down");
+                            }
                         }
                     }
                 }
 
-                // Stop the server (this will close all active connections)
-                // WebSocketSharp.Stop() is synchronous - setting ReuseAddress=true should handle rapid restarts
+                // Small delay to let close frames be sent
+                System.Threading.Thread.Sleep(100);
+
+                // Stop the server
                 _webSocketServer?.Stop();
 
                 McpLogger.LogInfo("WebSocket server stopped");
@@ -231,7 +351,204 @@ namespace McpUnity.Unity
                 Clients.Clear();
             }
         }
-        
+
+        /// <summary>
+        /// Stop the WebSocket server without blocking the calling thread.
+        /// Used during play mode transitions to avoid hanging Unity.
+        /// </summary>
+        public void StopServerNonBlocking()
+        {
+            if (!IsListening)
+            {
+                return;
+            }
+
+            var serverToStop = _webSocketServer;
+            _webSocketServer = null;
+            Clients.Clear();
+
+            // Close sessions on main thread before background stop
+            try
+            {
+                if (serverToStop?.WebSocketServices != null)
+                {
+                    var servicePath = "/McpUnity";
+                    if (serverToStop.WebSocketServices.TryGetServiceHost(servicePath, out var host))
+                    {
+                        var sessionsCount = host.Sessions.Count;
+                        if (sessionsCount > 0)
+                        {
+                            McpLogger.LogInfo($"Closing {sessionsCount} connection(s) before non-blocking stop");
+                            // Close each session individually
+                            foreach (var sessionId in host.Sessions.IDs.ToArray())
+                            {
+                                host.Sessions.CloseSession(sessionId, WebSocketSharp.CloseStatusCode.Normal, "Server shutting down");
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                McpLogger.LogWarning($"Error closing sessions: {ex.Message}");
+            }
+
+            // Stop on a background thread to avoid blocking Unity
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    System.Threading.Thread.Sleep(100); // Let close frames complete
+                    serverToStop?.Stop();
+                    McpLogger.LogInfo("WebSocket server stopped (non-blocking)");
+                }
+                catch (Exception ex)
+                {
+                    // Log but don't throw - we're on a background thread
+                    McpLogger.LogWarning($"Non-fatal error during non-blocking server stop: {ex.Message}");
+                }
+            });
+        }
+
+        /// <summary>
+        /// Force restart the server, bypassing IsListening checks.
+        /// Use when the server is in a zombie state (port bound but not accepting connections).
+        /// </summary>
+        public void ForceRestartServer()
+        {
+            McpLogger.LogWarning("[ForceRestart] Beginning aggressive server restart...");
+
+            // Reset all state flags first
+            _isStartingServer = false;
+            _consecutiveHealthFailures = 0;
+
+            // Forcefully tear down the existing server regardless of state
+            var oldServer = _webSocketServer;
+            _webSocketServer = null;
+            Clients.Clear();
+
+            if (oldServer != null)
+            {
+                McpLogger.LogInfo("[ForceRestart] Stopping old server instance...");
+                try
+                {
+                    // Try to close sessions first
+                    if (oldServer.WebSocketServices != null)
+                    {
+                        try
+                        {
+                            if (oldServer.WebSocketServices.TryGetServiceHost("/McpUnity", out var host))
+                            {
+                                foreach (var sessionId in host.Sessions.IDs.ToArray())
+                                {
+                                    try { host.Sessions.CloseSession(sessionId, WebSocketSharp.CloseStatusCode.Normal, "Force restart"); }
+                                    catch { /* Ignore individual session close errors */ }
+                                }
+                            }
+                        }
+                        catch { /* Ignore session enumeration errors */ }
+                    }
+
+                    oldServer.Stop();
+                }
+                catch (Exception ex)
+                {
+                    McpLogger.LogWarning($"[ForceRestart] Error stopping old server (continuing anyway): {ex.Message}");
+                }
+
+                // Explicitly null to help GC
+                oldServer = null;
+            }
+
+            // Unregister from service discovery
+            try { ServiceDiscovery.UnregisterService(); }
+            catch { /* Ignore */ }
+
+            // Wait for port to be released - try multiple times with increasing delay
+            McpLogger.LogInfo("[ForceRestart] Waiting for port to be released...");
+            int maxWaitAttempts = 5;
+            int waitDelayMs = 200;
+
+            for (int i = 0; i < maxWaitAttempts; i++)
+            {
+                System.Threading.Thread.Sleep(waitDelayMs);
+
+                // Test if port is free
+                try
+                {
+                    var testListener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, McpUnitySettings.Instance.Port);
+                    testListener.Start();
+                    testListener.Stop();
+                    McpLogger.LogInfo($"[ForceRestart] Port {McpUnitySettings.Instance.Port} is now available");
+                    break;
+                }
+                catch (SocketException)
+                {
+                    if (i < maxWaitAttempts - 1)
+                    {
+                        McpLogger.LogInfo($"[ForceRestart] Port still in use, waiting... ({i + 1}/{maxWaitAttempts})");
+                        waitDelayMs += 100; // Increase delay each attempt
+                    }
+                }
+            }
+
+            // Small additional delay for socket cleanup
+            System.Threading.Thread.Sleep(100);
+
+            // Now start fresh
+            McpLogger.LogInfo("[ForceRestart] Starting fresh server instance...");
+            StartServer();
+
+            if (IsListening)
+            {
+                McpLogger.LogInfo($"[ForceRestart] ✅ Server successfully restarted on port {McpUnitySettings.Instance.Port}");
+            }
+            else
+            {
+                McpLogger.LogError("[ForceRestart] ❌ Server failed to restart");
+            }
+        }
+
+        /// <summary>
+        /// Called when a client successfully connects. Updates health tracking.
+        /// </summary>
+        public void OnClientConnected(string clientId)
+        {
+            _lastConnectionTime = DateTime.UtcNow;
+            // Note: Clients dictionary is managed by socket handler which has the client name
+        }
+
+        /// <summary>
+        /// Performs a health check on the server. Returns true if healthy, false if needs restart.
+        /// </summary>
+        public bool PerformHealthCheck()
+        {
+            if (!IsListening)
+            {
+                return false;
+            }
+
+            // Try a quick TCP connection to verify the server is actually accepting
+            try
+            {
+                using (var testClient = new TcpClient())
+                {
+                    var connectTask = testClient.ConnectAsync("127.0.0.1", McpUnitySettings.Instance.Port);
+                    if (!connectTask.Wait(TimeSpan.FromMilliseconds(500)))
+                    {
+                        McpLogger.LogWarning("Health check: TCP connect timed out - server may be in zombie state");
+                        return false;
+                    }
+                    return testClient.Connected;
+                }
+            }
+            catch (Exception ex)
+            {
+                McpLogger.LogWarning($"Health check failed: {ex.Message}");
+                return false;
+            }
+        }
+
         /// <summary>
         /// Try to get a tool by name
         /// </summary>
@@ -425,6 +742,21 @@ namespace McpUnity.Unity
             // Register CompilationStatusTool
             CompilationStatusTool compilationStatusTool = new CompilationStatusTool();
             _tools.Add(compilationStatusTool.Name, compilationStatusTool);
+
+            // Register SetObjectReferenceTool - Wire up object references on serialized fields
+            SetObjectReferenceTool setObjectReferenceTool = new SetObjectReferenceTool();
+            _tools.Add(setObjectReferenceTool.Name, setObjectReferenceTool);
+
+            // Register CreateUIElementTool - Generic UI element factory
+            CreateUIElementTool createUIElementTool = new CreateUIElementTool();
+            _tools.Add(createUIElementTool.Name, createUIElementTool);
+
+            // Register InspectGameObjectTool - Inspect GameObjects and their components
+            InspectGameObjectTool inspectGameObjectTool = new InspectGameObjectTool();
+            _tools.Add(inspectGameObjectTool.Name, inspectGameObjectTool);
+
+            // Register additional tools from extension point
+            RegisterAdditionalTools.RegisterTo(_tools);
         }
         
         /// <summary>
@@ -529,6 +861,7 @@ namespace McpUnity.Unity
         /// <summary>
         /// Handles changes in Unity Editor's play mode state.
         /// Stops the server when exiting Edit Mode if configured, and restarts it when entering Play Mode or returning to Edit Mode if auto-start is enabled.
+        /// IMPORTANT: This handler must be non-blocking to avoid hanging Unity's play mode transitions.
         /// </summary>
         /// <param name="state">The current play mode state change.</param>
         private static void OnPlayModeStateChanged(PlayModeStateChange state)
@@ -536,23 +869,128 @@ namespace McpUnity.Unity
             switch (state)
             {
                 case PlayModeStateChange.ExitingEditMode:
-                    // About to enter Play Mode
+                    // About to enter Play Mode - stop server non-blocking
                     if (Instance.IsListening)
                     {
-                        Instance.StopServer();
+                        Instance.StopServerNonBlocking();
                     }
                     break;
                 case PlayModeStateChange.EnteredPlayMode:
+                    // Restart server after entering play mode (domain reload completed)
+                    EditorApplication.delayCall += () =>
+                    {
+                        if (!Instance.IsListening && McpUnitySettings.Instance.AutoStartServer)
+                        {
+                            Instance.StartServer();
+                        }
+                    };
+                    break;
                 case PlayModeStateChange.ExitingPlayMode:
-                    // Server is disabled during play mode as domain reload will be triggered again when stopped.
+                    // Keep server running while exiting
                     break;
                 case PlayModeStateChange.EnteredEditMode:
-                    // Returned to Edit Mode
-                    if (!Instance.IsListening && McpUnitySettings.Instance.AutoStartServer)
+                    // Returned to Edit Mode - defer server start to avoid blocking
+                    EditorApplication.delayCall += () =>
                     {
-                        Instance.StartServer();
-                    }
+                        if (!Instance.IsListening && McpUnitySettings.Instance.AutoStartServer)
+                        {
+                            Instance.StartServer();
+                        }
+                    };
                     break;
+            }
+        }
+
+        /// <summary>
+        /// Called every editor frame. Performs periodic health checks and auto-recovery.
+        /// </summary>
+        private void OnEditorUpdate()
+        {
+            if (!_autoHealingEnabled || !McpUnitySettings.Instance.AutoStartServer)
+                return;
+
+            // Check if enough time has passed since last health check
+            double currentTime = EditorApplication.timeSinceStartup;
+            if (currentTime - _lastHealthCheckTime < HealthCheckIntervalSeconds)
+                return;
+
+            _lastHealthCheckTime = currentTime;
+
+            // Don't check during grace period after server start
+            if (_serverStartTime != DateTime.MinValue)
+            {
+                var timeSinceStart = (DateTime.UtcNow - _serverStartTime).TotalSeconds;
+                if (timeSinceStart < HealthCheckGracePeriodSeconds)
+                    return;
+            }
+
+            // If server should be running but isn't, start it
+            if (!IsListening)
+            {
+                _consecutiveHealthFailures = 0;
+                McpLogger.LogInfo("[AutoHeal] Server not listening, starting...");
+                StartServer();
+                return;
+            }
+
+            // Server reports listening - verify it's actually accepting connections
+            bool isHealthy = PerformHealthCheckQuiet();
+
+            if (isHealthy)
+            {
+                // Reset failure counter on success
+                if (_consecutiveHealthFailures > 0)
+                {
+                    McpLogger.LogInfo("[AutoHeal] Server health restored");
+                }
+                _consecutiveHealthFailures = 0;
+            }
+            else
+            {
+                _consecutiveHealthFailures++;
+                McpLogger.LogWarning($"[AutoHeal] Health check failed ({_consecutiveHealthFailures}/{HealthFailureThreshold})");
+
+                if (_consecutiveHealthFailures >= HealthFailureThreshold)
+                {
+                    McpLogger.LogWarning("[AutoHeal] Zombie state detected - triggering auto-recovery...");
+                    _consecutiveHealthFailures = 0;
+
+                    // Disable auto-healing temporarily to prevent rapid retries
+                    _autoHealingEnabled = false;
+
+                    // Schedule the restart on next frame to avoid issues
+                    EditorApplication.delayCall += () =>
+                    {
+                        ForceRestartServer();
+                        _autoHealingEnabled = true;
+                    };
+                }
+            }
+        }
+
+        /// <summary>
+        /// Quiet version of health check that doesn't log on failure (used by auto-healing)
+        /// </summary>
+        private bool PerformHealthCheckQuiet()
+        {
+            if (!IsListening)
+                return false;
+
+            try
+            {
+                using (var testClient = new TcpClient())
+                {
+                    var connectTask = testClient.ConnectAsync("127.0.0.1", McpUnitySettings.Instance.Port);
+                    if (!connectTask.Wait(TimeSpan.FromMilliseconds(500)))
+                    {
+                        return false; // Timeout - zombie state
+                    }
+                    return testClient.Connected;
+                }
+            }
+            catch
+            {
+                return false;
             }
         }
 

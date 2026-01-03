@@ -282,6 +282,9 @@ namespace McpUnity.Unity
             // Add the client to the server (always track, even without header)
             _server.Clients.Add(ID, clientName);
 
+            // Notify server of successful connection (for health tracking)
+            _server.OnClientConnected(ID);
+
             McpLogger.LogInfo($"WebSocket client '{clientName}' connected (ID: {ID})");
         }
         

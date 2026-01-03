@@ -25,9 +25,17 @@ namespace McpUnity.DirectMcp.Services
 
         public string? FindUnityProject()
         {
+            // Check for explicit project path from environment variable
+            var envProjectPath = Environment.GetEnvironmentVariable("UNITY_PROJECT_PATH");
+            if (!string.IsNullOrEmpty(envProjectPath) && IsUnityProject(envProjectPath))
+            {
+                _logger.LogInformation("Using Unity project from UNITY_PROJECT_PATH: {Path}", envProjectPath);
+                return envProjectPath;
+            }
+
             var currentDir = Directory.GetCurrentDirectory();
             var exePath = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule?.FileName);
-            
+
             // First check if we're already in a Unity project
             if (IsUnityProject(currentDir))
             {

@@ -15,6 +15,8 @@ namespace McpUnity.DirectMcp.Services
     {
         bool IsConnected { get; }
         event EventHandler<JObject>? MessageReceived;
+        event EventHandler? ConnectionLost;
+        event EventHandler? ConnectionRestored;
         Task ConnectAsync(string uri, CancellationToken cancellationToken = default);
         Task DisconnectAsync();
         Task SendAsync(JObject message, CancellationToken cancellationToken = default);
@@ -30,6 +32,9 @@ namespace McpUnity.DirectMcp.Services
 
         public bool IsConnected => _webSocket?.State == WebSocketState.Open;
         public event EventHandler<JObject>? MessageReceived;
+        public event EventHandler? ConnectionLost;
+        public event EventHandler? ConnectionRestored;
+        private bool _wasConnected;
 
         public WebSocketConnectionManager(ILogger<WebSocketConnectionManager> logger)
         {
@@ -79,6 +84,14 @@ namespace McpUnity.DirectMcp.Services
                 // Start receive loop
                 _receiveCts = new CancellationTokenSource();
                 _ = Task.Run(() => ReceiveLoopAsync(_receiveCts.Token));
+
+                // Raise connection restored event if we were previously connected
+                if (_wasConnected)
+                {
+                    _logger.LogInformation("Connection restored to Unity");
+                    ConnectionRestored?.Invoke(this, EventArgs.Empty);
+                }
+                _wasConnected = true;
             }
             finally
             {
@@ -186,6 +199,15 @@ namespace McpUnity.DirectMcp.Services
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError(ex, "Error in receive loop");
+            }
+            finally
+            {
+                // Raise connection lost event
+                if (_wasConnected)
+                {
+                    _logger.LogWarning("Connection to Unity lost");
+                    ConnectionLost?.Invoke(this, EventArgs.Empty);
+                }
             }
         }
 

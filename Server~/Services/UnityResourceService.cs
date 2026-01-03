@@ -107,10 +107,11 @@ namespace McpUnity.DirectMcp.Services
                 {
                     Contents = new List<ResourceContents>
                     {
-                        new TextResourceContents 
-                        { 
+                        new TextResourceContents
+                        {
                             Uri = uri,
-                            Text = "Failed to read resource - not connected to Unity" 
+                            MimeType = "text/plain",
+                            Text = "Failed to read resource - not connected to Unity"
                         }
                     }
                 };
@@ -122,10 +123,11 @@ namespace McpUnity.DirectMcp.Services
                 {
                     Contents = new List<ResourceContents>
                     {
-                        new TextResourceContents 
-                        { 
+                        new TextResourceContents
+                        {
                             Uri = uri,
-                            Text = $"Error: {response["error"]?["message"]?.ToString() ?? "Unknown error"}" 
+                            MimeType = "text/plain",
+                            Text = $"Error: {response["error"]?["message"]?.ToString() ?? "Unknown error"}"
                         }
                     }
                 };
@@ -149,13 +151,20 @@ namespace McpUnity.DirectMcp.Services
                 {
                     var itemUri = item["uri"]?.ToString() ?? uri;
                     var mimeType = item["mimeType"]?.ToString();
-                    
-                    if (mimeType?.StartsWith("text/") == true || string.IsNullOrEmpty(mimeType))
+
+                    // Check if response has text content (text/* or application/json)
+                    var hasText = item["text"] != null;
+                    var isTextMime = mimeType?.StartsWith("text/") == true ||
+                                     mimeType == "application/json" ||
+                                     string.IsNullOrEmpty(mimeType);
+
+                    if (hasText || isTextMime)
                     {
                         contents.Add(new TextResourceContents
                         {
                             Uri = itemUri,
-                            MimeType = mimeType,
+                            // MimeType must not be null - default to application/json for structured data or text/plain
+                            MimeType = mimeType ?? "application/json",
                             Text = item["text"]?.ToString() ?? ""
                         });
                     }
@@ -164,7 +173,8 @@ namespace McpUnity.DirectMcp.Services
                         contents.Add(new BlobResourceContents
                         {
                             Uri = itemUri,
-                            MimeType = mimeType,
+                            // MimeType must not be null - default to application/octet-stream for binary
+                            MimeType = mimeType ?? "application/octet-stream",
                             Blob = item["blob"]?.ToString() ?? ""
                         });
                     }

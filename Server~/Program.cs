@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using McpUnity.DirectMcp.Services;
+using McpUnity.DirectMcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -41,8 +42,8 @@ namespace McpUnity.DirectMcp
             {
                 options.LogToStandardErrorThreshold = LogLevel.Trace;
             });
-            // Set to Warning level to reduce verbosity for connection attempts
-            builder.Logging.SetMinimumLevel(LogLevel.Warning);
+            // Set to Information level to see tool discovery
+            builder.Logging.SetMinimumLevel(LogLevel.Information);
         }
 
         private static void RegisterServices(HostApplicationBuilder builder)
@@ -71,10 +72,20 @@ namespace McpUnity.DirectMcp
                     Name = "unity-mcp",
                     Version = "3.0.0" // Clean architecture version
                 };
+
+                // Enable lazy tool discovery - tools can be updated after connection
+                options.Capabilities = new ServerCapabilities
+                {
+                    Tools = new ToolsCapability { ListChanged = true },
+                    Resources = new ResourcesCapability { ListChanged = true }
+                };
             })
             .WithStdioServerTransport()
-            
-            // Tool handlers
+
+            // Register static Unity tools (available at startup)
+            .WithTools<UnityTools>()
+
+            // Tool handlers (for dynamic Unity tools)
             .WithListToolsHandler(async (context, ct) =>
             {
                 var logger = context.Services!.GetRequiredService<ILogger<Program>>();

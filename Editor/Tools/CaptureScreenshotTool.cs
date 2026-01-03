@@ -30,8 +30,8 @@ namespace McpUnity.Tools
             {
                 // Parse parameters with reasonable defaults
                 string viewType = parameters["viewType"]?.ToObject<string>() ?? "game";
-                int width = parameters["width"]?.ToObject<int>() ?? 640;  // Default to 640x480 for manageable size
-                int height = parameters["height"]?.ToObject<int>() ?? 480;
+                int width = parameters["width"]?.ToObject<int>() ?? 0;   // 0 = native game view resolution
+                int height = parameters["height"]?.ToObject<int>() ?? 0; // 0 = native game view resolution
                 bool saveToFile = parameters["saveToFile"]?.ToObject<bool>() ?? false;
                 string filePath = parameters["filePath"]?.ToObject<string>();
                 

@@ -63,25 +63,98 @@ namespace McpUnity
                 McpLogger.LogError("Failed to get McpUnityServer instance");
                 return;
             }
-            
+
             if (!server.IsListening)
             {
                 McpLogger.LogInfo("Server is not running");
-                EditorUtility.DisplayDialog("MCP Unity", 
-                    "Server is not running", 
+                EditorUtility.DisplayDialog("MCP Unity",
+                    "Server is not running",
                     "OK");
                 return;
             }
-            
+
             McpLogger.LogInfo("Stopping server...");
             server.StopServer();
             McpLogger.LogInfo("✅ Server stopped");
-            EditorUtility.DisplayDialog("MCP Unity", 
-                "Server stopped successfully", 
+            EditorUtility.DisplayDialog("MCP Unity",
+                "Server stopped successfully",
                 "OK");
         }
-        
-        [MenuItem("Tools/MCP Unity/Server Status", priority = 3)]
+
+        [MenuItem("Tools/MCP Unity/Force Restart Server", priority = 3)]
+        public static void ForceRestartServerNow()
+        {
+            var server = McpUnityServer.Instance;
+            if (server == null)
+            {
+                McpLogger.LogError("Failed to get McpUnityServer instance");
+                EditorUtility.DisplayDialog("MCP Unity Error",
+                    "Failed to get server instance",
+                    "OK");
+                return;
+            }
+
+            McpLogger.LogWarning("=== FORCE RESTART requested ===");
+            McpLogger.LogInfo("This will forcefully restart the server regardless of current state.");
+
+            server.ForceRestartServer();
+
+            if (server.IsListening)
+            {
+                McpLogger.LogInfo($"✅ Server force-restarted on port {McpUnitySettings.Instance.Port}");
+                EditorUtility.DisplayDialog("MCP Unity",
+                    $"Server force-restarted successfully!\n\nListening on port {McpUnitySettings.Instance.Port}",
+                    "OK");
+            }
+            else
+            {
+                McpLogger.LogError("Server failed to restart after force restart");
+                EditorUtility.DisplayDialog("MCP Unity Error",
+                    "Server failed to restart.\n\nCheck the Unity Console for errors.",
+                    "OK");
+            }
+        }
+
+        [MenuItem("Tools/MCP Unity/Health Check", priority = 4)]
+        public static void PerformHealthCheck()
+        {
+            var server = McpUnityServer.Instance;
+            if (server == null)
+            {
+                EditorUtility.DisplayDialog("MCP Unity",
+                    "Server instance not initialized",
+                    "OK");
+                return;
+            }
+
+            McpLogger.LogInfo("=== Performing Health Check ===");
+
+            bool isHealthy = server.PerformHealthCheck();
+
+            if (isHealthy)
+            {
+                McpLogger.LogInfo("✅ Health check PASSED - server is accepting connections");
+                EditorUtility.DisplayDialog("MCP Unity Health Check",
+                    "✅ HEALTHY\n\nServer is accepting TCP connections.\nWebSocket endpoint should be functional.",
+                    "OK");
+            }
+            else
+            {
+                McpLogger.LogWarning("❌ Health check FAILED - server may need restart");
+
+                var result = EditorUtility.DisplayDialog("MCP Unity Health Check",
+                    "❌ UNHEALTHY\n\nServer is not accepting connections.\nThis can happen after Hot Reload or domain reload.\n\nWould you like to force restart the server?",
+                    "Force Restart",
+                    "Cancel");
+
+                if (result)
+                {
+                    ForceRestartServerNow();
+                }
+            }
+        }
+
+        [MenuItem("Tools/MCP Unity/Server Status", priority = 5)]
         public static void ShowServerStatus()
         {
             var server = McpUnityServer.Instance;

@@ -23,6 +23,20 @@ namespace McpUnity.Unity
             {
                 tools.Add(logSubscriptionTool.Name, logSubscriptionTool);
             }
+
+            // Register FindGameObjectTool - Search for GameObjects by name pattern
+            var findGameObjectTool = new FindGameObjectTool();
+            if (!tools.ContainsKey(findGameObjectTool.Name))
+            {
+                tools.Add(findGameObjectTool.Name, findGameObjectTool);
+            }
+
+            // Register CopyFieldValueTool - Copy field values between components (including sprites)
+            var copyFieldValueTool = new CopyFieldValueTool();
+            if (!tools.ContainsKey(copyFieldValueTool.Name))
+            {
+                tools.Add(copyFieldValueTool.Name, copyFieldValueTool);
+            }
         }
     }
 }

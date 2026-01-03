@@ -184,65 +184,112 @@ namespace McpUnity.Tools
         {
             try
             {
-                // Find the main camera (works without focus)
-                Camera camera = Camera.main;
-                if (camera == null)
+                // Get the Game view window
+                System.Type gameViewType = System.Type.GetType("UnityEditor.GameView,UnityEditor");
+                if (gameViewType == null)
                 {
-                    // Try to find any camera
-                    camera = UnityEngine.Object.FindFirstObjectByType<Camera>();
-                }
-
-                if (camera == null)
-                {
-                    Debug.LogWarning("[MCP Unity] No camera found in scene for Game view capture");
+                    Debug.LogWarning("[MCP Unity] Could not find GameView type");
                     return null;
                 }
 
-                // Determine capture dimensions
-                int captureWidth = width > 0 ? width : Screen.width;
-                int captureHeight = height > 0 ? height : Screen.height;
-
-                // Create render texture
-                var renderTexture = RenderTexture.GetTemporary(captureWidth, captureHeight, 24);
-                var previousRT = camera.targetTexture;
-                var previousActive = RenderTexture.active;
-
-                try
+                EditorWindow gameView = EditorWindow.GetWindow(gameViewType, false, null, false);
+                if (gameView == null)
                 {
-                    camera.targetTexture = renderTexture;
-                    camera.Render();
+                    Debug.LogWarning("[MCP Unity] No Game view window available");
+                    return null;
+                }
 
-                    RenderTexture.active = renderTexture;
-                    var texture2D = new Texture2D(captureWidth, captureHeight, TextureFormat.RGB24, false);
-                    texture2D.ReadPixels(new Rect(0, 0, captureWidth, captureHeight), 0, 0);
-                    texture2D.Apply();
+                // Focus and repaint the game view
+                gameView.Focus();
+                gameView.Repaint();
+                UnityEditorInternal.InternalEditorUtility.RepaintAllViews();
 
-                    // Convert to JPEG (much smaller than PNG) with 75% quality
-                    byte[] jpegData = texture2D.EncodeToJPG(75);
-                    string base64Data = Convert.ToBase64String(jpegData);
+                // Get the game view's screen position and size
+                var windowPosition = gameView.position;
 
+                // Use reflection to get the actual render area within the game view
+                var viewInWindowProp = gameViewType.GetProperty("viewInWindow",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+                Rect renderRect;
+                if (viewInWindowProp != null)
+                {
+                    renderRect = (Rect)viewInWindowProp.GetValue(gameView);
+                }
+                else
+                {
+                    // Fallback: estimate render area (exclude toolbar ~17px)
+                    renderRect = new Rect(0, 17, windowPosition.width, windowPosition.height - 17);
+                }
+
+                // Calculate screen coordinates for the render area
+                int screenX = (int)(windowPosition.x + renderRect.x);
+                int screenY = (int)(windowPosition.y + renderRect.y);
+                int captureWidth = (int)renderRect.width;
+                int captureHeight = (int)renderRect.height;
+
+                // Clamp to reasonable sizes
+                captureWidth = Mathf.Clamp(captureWidth, 1, 4096);
+                captureHeight = Mathf.Clamp(captureHeight, 1, 4096);
+
+                // Read pixels directly from screen (captures everything including UI)
+                Color[] pixels = UnityEditorInternal.InternalEditorUtility.ReadScreenPixel(
+                    new Vector2(screenX, screenY),
+                    captureWidth,
+                    captureHeight);
+
+                if (pixels == null || pixels.Length == 0)
+                {
+                    Debug.LogWarning("[MCP Unity] ReadScreenPixel returned no data");
+                    return null;
+                }
+
+                // Create texture from screen pixels
+                var texture2D = new Texture2D(captureWidth, captureHeight, TextureFormat.RGB24, false);
+                texture2D.SetPixels(pixels);
+                texture2D.Apply();
+
+                // Resize if requested
+                if (width > 0 && height > 0 && (width != captureWidth || height != captureHeight))
+                {
+                    var resized = ResizeTexture(texture2D, width, height);
                     UnityEngine.Object.DestroyImmediate(texture2D);
+                    texture2D = resized;
+                    captureWidth = width;
+                    captureHeight = height;
+                }
 
-                    return new Dictionary<string, object>
-                    {
-                        ["data"] = base64Data, // MCP format: just base64, no data URL prefix
-                        ["mimeType"] = "image/jpeg",
-                        ["width"] = captureWidth,
-                        ["height"] = captureHeight
-                    };
-                }
-                finally
+                byte[] jpegData = texture2D.EncodeToJPG(85);
+                string base64Data = Convert.ToBase64String(jpegData);
+
+                UnityEngine.Object.DestroyImmediate(texture2D);
+
+                return new Dictionary<string, object>
                 {
-                    camera.targetTexture = previousRT;
-                    RenderTexture.active = previousActive;
-                    RenderTexture.ReleaseTemporary(renderTexture);
-                }
+                    ["data"] = base64Data,
+                    ["mimeType"] = "image/jpeg",
+                    ["width"] = captureWidth,
+                    ["height"] = captureHeight
+                };
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[MCP Unity] Failed to capture Game view: {ex.Message}");
                 return null;
             }
+        }
+
+        private static Texture2D ResizeTexture(Texture2D source, int targetWidth, int targetHeight)
+        {
+            RenderTexture rt = RenderTexture.GetTemporary(targetWidth, targetHeight);
+            RenderTexture.active = rt;
+            Graphics.Blit(source, rt);
+            Texture2D result = new Texture2D(targetWidth, targetHeight, TextureFormat.RGB24, false);
+            result.ReadPixels(new Rect(0, 0, targetWidth, targetHeight), 0, 0);
+            result.Apply();
+            RenderTexture.active = null;
+            RenderTexture.ReleaseTemporary(rt);
+            return result;
         }
 
 
