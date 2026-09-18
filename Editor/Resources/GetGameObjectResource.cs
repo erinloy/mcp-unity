@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
+using McpUnity.Utils;
 
 namespace McpUnity.Resources
 {
@@ -19,6 +21,20 @@ namespace McpUnity.Resources
             Uri = "unity://gameobject/{idOrName}";
         }
         
+        /// <summary>
+        /// Default maximum hierarchy depth when serializing children. Prevents oversized responses that
+        /// would otherwise exceed the MCP framework's response size limit and drop the WebSocket
+        /// connection. See: https://github.com/CoderGamester/mcp-unity/issues/134
+        /// </summary>
+        public const int DefaultMaxChildDepth = 2;
+
+        /// <summary>
+        /// Hard cap on serialized response size, in bytes. Once recursion accumulates this much JSON
+        /// the remaining children are replaced with a truncation marker so the caller can drill in
+        /// instead of losing the connection.
+        /// </summary>
+        public const int MaxResponseBytes = 5 * 1024 * 1024;
+
         /// <summary>
         /// Fetch information about a specific GameObject
         /// </summary>
@@ -49,7 +65,7 @@ namespace McpUnity.Resources
             }
 
             string idOrName = parameters["idOrName"]?.ToObject<string>();
-            
+
             if (string.IsNullOrEmpty(idOrName))
             {
                 // Return MCP-compliant error format
@@ -72,12 +88,12 @@ namespace McpUnity.Resources
             }
 
             GameObject gameObject = null;
-            
+
             // Try to parse as an instance ID first
             if (int.TryParse(idOrName, out int instanceId))
             {
                 // Unity Instance IDs are typically negative, but we'll accept any integer
-                UnityEngine.Object unityObject = EditorUtility.InstanceIDToObject(instanceId);
+                UnityEngine.Object unityObject = UnityObjectId.ObjectFromId(instanceId);
                 gameObject = unityObject as GameObject;
             }
             else
@@ -85,7 +101,7 @@ namespace McpUnity.Resources
                 // Otherwise, treat it as a name or hierarchical path
                 gameObject = GameObject.Find(idOrName);
             }
-            
+
             // Check if the GameObject was found
             if (gameObject == null)
             {
@@ -108,17 +124,22 @@ namespace McpUnity.Resources
                 };
             }
 
+            int maxDepth = parameters["maxDepth"]?.ToObject<int?>() ?? DefaultMaxChildDepth;
+            bool includeComponents = parameters["includeComponents"]?.ToObject<bool?>() ?? true;
+            bool includeComponentProperties = parameters["includeComponentProperties"]?.ToObject<bool?>() ?? true;
+
             // Convert the GameObject to a JObject
-            JObject gameObjectData = GameObjectToJObject(gameObject, true);
-            
+            JObject gameObjectData = GameObjectToJObject(
+                gameObject, true, maxDepth, includeComponents, includeComponentProperties);
+
             // Create the content as JSON
             var objectData = new JObject
             {
                 ["gameObject"] = gameObjectData,
-                ["instanceId"] = gameObject.GetInstanceID(),
+                ["instanceId"] = UnityObjectId.GetObjectId(gameObject),
                 ["summary"] = $"Retrieved GameObject data for '{gameObject.name}'"
             };
-                
+
             // Return MCP-compliant resource result format
             return new JObject
             {
@@ -135,23 +156,45 @@ namespace McpUnity.Resources
         }
 
         /// <summary>
-        /// Convert a GameObject to a JObject with its hierarchy
+        /// Convert a GameObject to a JObject with its hierarchy, scoped by depth, component toggles,
+        /// and a hard byte cap. The byte cap guards against responses exceeding the MCP framework's
+        /// 15 MB ceiling, which would otherwise drop the WebSocket connection (issue #134).
         /// </summary>
         /// <param name="gameObject">The GameObject to convert</param>
         /// <param name="includeDetailedComponents">Whether to include detailed component information</param>
+        /// <param name="maxDepth">Maximum child levels to recurse. 0 = no children. Default: <see cref="DefaultMaxChildDepth"/></param>
+        /// <param name="includeComponents">When false, the components array is omitted entirely</param>
+        /// <param name="includeComponentProperties">When false, components are listed without their reflected properties</param>
         /// <returns>A JObject representing the GameObject</returns>
-        public static JObject GameObjectToJObject(GameObject gameObject, bool includeDetailedComponents)
+        public static JObject GameObjectToJObject(
+            GameObject gameObject,
+            bool includeDetailedComponents,
+            int maxDepth = DefaultMaxChildDepth,
+            bool includeComponents = true,
+            bool includeComponentProperties = true)
+        {
+            int[] bytesUsed = { 0 };
+            return GameObjectToJObjectInternal(
+                gameObject,
+                includeDetailedComponents,
+                maxDepth,
+                includeComponents,
+                includeComponentProperties,
+                currentDepth: 0,
+                bytesUsed);
+        }
+
+        private static JObject GameObjectToJObjectInternal(
+            GameObject gameObject,
+            bool includeDetailedComponents,
+            int maxDepth,
+            bool includeComponents,
+            bool includeComponentProperties,
+            int currentDepth,
+            int[] bytesUsed)
         {
             if (gameObject == null) return null;
-            
-            // Add children
-            JArray childrenArray = new JArray();
-            foreach (Transform child in gameObject.transform)
-            {
-                childrenArray.Add(GameObjectToJObject(child.gameObject, includeDetailedComponents));
-            }
-            
-            // Create a JObject for the game object
+
             JObject gameObjectJson = new JObject
             {
                 ["name"] = gameObject.name,
@@ -160,44 +203,203 @@ namespace McpUnity.Resources
                 ["tag"] = gameObject.tag,
                 ["layer"] = gameObject.layer,
                 ["layerName"] = LayerMask.LayerToName(gameObject.layer),
-                ["instanceId"] = gameObject.GetInstanceID(),
-                ["components"] = GetComponentsInfo(gameObject, includeDetailedComponents),
-                ["children"] = childrenArray
+                ["instanceId"] = UnityObjectId.GetObjectId(gameObject)
             };
-            
+
+            if (includeComponents)
+            {
+                gameObjectJson["components"] = GetComponentsInfo(
+                    gameObject, includeDetailedComponents, includeComponentProperties);
+            }
+
+            int childCount = gameObject.transform.childCount;
+            JArray childrenArray = new JArray();
+            gameObjectJson["children"] = childrenArray;
+
+            // Account for this node's own JSON before deciding whether to recurse further.
+            bytesUsed[0] += gameObjectJson.ToString(Formatting.None).Length;
+
+            if (childCount > 0 && currentDepth >= maxDepth)
+            {
+                gameObjectJson["_truncated"] = true;
+                gameObjectJson["_truncatedReason"] = "depth_limit";
+                gameObjectJson["_childCount"] = childCount;
+            }
+            else if (childCount > 0 && bytesUsed[0] > MaxResponseBytes)
+            {
+                gameObjectJson["_truncated"] = true;
+                gameObjectJson["_truncatedReason"] = "size_limit_exceeded";
+                gameObjectJson["_childCount"] = childCount;
+                gameObjectJson["_hint"] = "Response exceeded 5MB cap. Re-query specific children with maxDepth=0 or includeComponentProperties=false.";
+            }
+            else
+            {
+                foreach (Transform child in gameObject.transform)
+                {
+                    if (bytesUsed[0] > MaxResponseBytes)
+                    {
+                        gameObjectJson["_truncated"] = true;
+                        gameObjectJson["_truncatedReason"] = "size_limit_exceeded";
+                        gameObjectJson["_childCount"] = childCount;
+                        gameObjectJson["_serializedChildCount"] = childrenArray.Count;
+                        gameObjectJson["_hint"] = "Response exceeded 5MB cap. Re-query specific children with maxDepth=0 or includeComponentProperties=false.";
+                        break;
+                    }
+
+                    childrenArray.Add(GameObjectToJObjectInternal(
+                        child.gameObject,
+                        includeDetailedComponents,
+                        maxDepth,
+                        includeComponents,
+                        includeComponentProperties,
+                        currentDepth + 1,
+                        bytesUsed));
+                }
+            }
+
             return gameObjectJson;
         }
         
+        /// <summary>
+        /// Namespace prefixes for components with native/C++ code that crash when accessed via reflection.
+        /// These components will only have basic info (type, enabled) serialized, not detailed properties.
+        /// </summary>
+        private static readonly string[] UnsafeNamespacePrefixes = new string[]
+        {
+            "Pathfinding",  // A* Pathfinding Project
+            "FMOD",         // FMOD audio
+            "FMODUnity",    // FMOD Unity integration
+        };
+
+        /// <summary>
+        /// Component base types that should never have public properties reflected because some native-backed getters
+        /// can crash the Unity editor before a managed exception is thrown.
+        /// </summary>
+        private static readonly Type[] UnsafeDetailedInspectionBaseTypes = new Type[]
+        {
+            typeof(Collider)
+        };
+
+        /// <summary>
+        /// Common expensive or unsafe properties that should be skipped for all component types.
+        /// </summary>
+        private static readonly HashSet<string> GloballySkippedPropertyNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "mesh",
+            "sharedMesh",
+            "material",
+            "materials",
+            "sharedMaterial",
+            "sharedMaterials",
+            "sprite",
+            "mainTexture",
+            "mainTextureOffset",
+            "mainTextureScale"
+        };
+
+        /// <summary>
+        /// Per-component property denylist for getters known to be unsafe via reflection.
+        /// Keys are matched against the declaring component type and its base types.
+        /// </summary>
+        private static readonly Dictionary<Type, HashSet<string>> SkippedPropertiesByComponentType = new Dictionary<Type, HashSet<string>>
+        {
+            [typeof(Collider)] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "GeometryHolder"
+            }
+        };
+        
+        /// <summary>
+        /// Check if a component type is from a native plugin that may crash when accessed via reflection
+        /// </summary>
+        private static bool IsUnsafeNativeComponent(Type componentType)
+        {
+            if (componentType == null) return true;
+            
+            string fullName = componentType.FullName ?? "";
+            string namespaceName = componentType.Namespace ?? "";
+            
+            foreach (string prefix in UnsafeNamespacePrefixes)
+            {
+                if (namespaceName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
+                    fullName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            
+            return false;
+        }
+
+        /// <summary>
+        /// Check if a component type is unsafe to inspect in detail.
+        /// </summary>
+        private static bool ShouldSkipDetailedInspection(Type componentType)
+        {
+            if (IsUnsafeNativeComponent(componentType))
+            {
+                return true;
+            }
+
+            foreach (Type unsafeBaseType in UnsafeDetailedInspectionBaseTypes)
+            {
+                if (unsafeBaseType.IsAssignableFrom(componentType))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         /// <summary>
         /// Get information about the components attached to a GameObject
         /// </summary>
         /// <param name="gameObject">The GameObject to get components from</param>
         /// <param name="includeDetailedInfo">Whether to include detailed component information</param>
+        /// <param name="includeProperties">When false, the per-component 'properties' object is omitted entirely.
+        /// Useful for callers that only need component type names, saving substantial response size.</param>
         /// <returns>A JArray containing component information</returns>
-        private static JArray GetComponentsInfo(GameObject gameObject, bool includeDetailedInfo = false)
+        private static JArray GetComponentsInfo(
+            GameObject gameObject,
+            bool includeDetailedInfo = false,
+            bool includeProperties = true)
         {
             Component[] components = gameObject.GetComponents<Component>();
             JArray componentsArray = new JArray();
-            
+
             foreach (Component component in components)
             {
                 if (component == null) continue;
-                
+
+                Type componentType = component.GetType();
+                bool skipDetailedInspection = ShouldSkipDetailedInspection(componentType);
+
                 JObject componentJson = new JObject
                 {
-                    ["type"] = component.GetType().Name,
+                    ["type"] = componentType.Name,
                     ["enabled"] = IsComponentEnabled(component)
                 };
 
-                // Add detailed information if requested
-                if (includeDetailedInfo)
+                // Add detailed information if requested and component is safe to inspect
+                if (includeDetailedInfo && includeProperties)
                 {
-                    componentJson["properties"] = GetComponentProperties(component);
+                    if (skipDetailedInspection)
+                    {
+                        componentJson["properties"] = new JObject
+                        {
+                            ["_skipped"] = "Detailed property serialization skipped for safety"
+                        };
+                    }
+                    else
+                    {
+                        componentJson["properties"] = GetComponentProperties(component);
+                    }
                 }
-                    
+
                 componentsArray.Add(componentJson);
             }
-            
+
             return componentsArray;
         }
         
@@ -231,6 +433,16 @@ namespace McpUnity.Resources
         }
 
         /// <summary>
+        /// Maximum depth for serializing nested objects to prevent stack overflow from circular references
+        /// </summary>
+        private const int MaxSerializationDepth = 5;
+        
+        /// <summary>
+        /// Maximum items to serialize in a collection to prevent excessive output
+        /// </summary>
+        private const int MaxCollectionItems = 50;
+
+        /// <summary>
         /// Get all serialized fields, public fields and public properties of a component
         /// </summary>
         /// <param name="component">The component to get properties from</param>
@@ -241,6 +453,9 @@ namespace McpUnity.Resources
 
             JObject propertiesJson = new JObject();
             Type componentType = component.GetType();
+            
+            // Track visited objects to prevent circular reference loops
+            HashSet<object> visited = new HashSet<object>(new ReferenceEqualityComparer());
 
             // Get serialized fields (both public and private with SerializeField attribute)
             FieldInfo[] fields = componentType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
@@ -253,7 +468,7 @@ namespace McpUnity.Resources
                 try
                 {
                     object value = field.GetValue(component);
-                    propertiesJson[field.Name] = SerializeValue(value);
+                    propertiesJson[field.Name] = SerializeValue(value, 0, visited);
                 }
                 catch (Exception)
                 {
@@ -267,12 +482,12 @@ namespace McpUnity.Resources
             foreach (PropertyInfo property in properties)
             {
                 // Only include properties with a getter and skip properties that might cause issues or are not useful
-                if (!property.CanRead || ShouldSkipProperty(property)) continue;
+                if (!property.CanRead || ShouldSkipProperty(componentType, property)) continue;
                 
                 try
                 {
                     object value = property.GetValue(component);
-                    propertiesJson[property.Name] = SerializeValue(value);
+                    propertiesJson[property.Name] = SerializeValue(value, 0, visited);
                 }
                 catch (Exception)
                 {
@@ -283,34 +498,80 @@ namespace McpUnity.Resources
 
             return propertiesJson;
         }
+        
+        /// <summary>
+        /// Reference equality comparer for tracking visited objects (prevents circular reference infinite loops)
+        /// </summary>
+        private class ReferenceEqualityComparer : IEqualityComparer<object>
+        {
+            public new bool Equals(object x, object y) => ReferenceEquals(x, y);
+            public int GetHashCode(object obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+        }
 
         /// <summary>
         /// Determine if a property should be skipped during serialization
         /// </summary>
         /// <param name="property">The property to check</param>
         /// <returns>True if the property should be skipped, false otherwise</returns>
-        private static bool ShouldSkipProperty(PropertyInfo property)
+        private static bool ShouldSkipProperty(Type componentType, PropertyInfo property)
         {
-            // Skip properties that might cause issues or are not useful
-            string[] skippedProperties = new string[]
+            if (property == null)
             {
-                "mesh", "sharedMesh", "material", "materials",
-                "sharedMaterial", "sharedMaterials", "sprite",
-                "mainTexture", "mainTextureOffset", "mainTextureScale"
-            };
+                return true;
+            }
 
-            return Array.IndexOf(skippedProperties, property.Name.ToLower()) >= 0;
+            // Skip non-public getters and indexers exposed as properties.
+            if (property.GetMethod == null || !property.GetMethod.IsPublic || property.GetIndexParameters().Length > 0)
+            {
+                return true;
+            }
+
+            if (GloballySkippedPropertyNames.Contains(property.Name))
+            {
+                return true;
+            }
+
+            foreach (KeyValuePair<Type, HashSet<string>> skippedEntry in SkippedPropertiesByComponentType)
+            {
+                if (skippedEntry.Key.IsAssignableFrom(componentType) &&
+                    skippedEntry.Value.Contains(property.Name))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
-        /// Serialize a value to a JToken
+        /// Serialize a value to a JToken with depth limiting and circular reference protection
         /// </summary>
         /// <param name="value">The value to serialize</param>
+        /// <param name="depth">Current recursion depth</param>
+        /// <param name="visited">Set of already visited reference objects to detect circular references</param>
         /// <returns>A JToken representing the value</returns>
-        private static JToken SerializeValue(object value)
+        private static JToken SerializeValue(object value, int depth = 0, HashSet<object> visited = null)
         {
             if (value == null)
                 return JValue.CreateNull();
+            
+            // Depth limit check to prevent stack overflow
+            if (depth > MaxSerializationDepth)
+                return "[max depth exceeded]";
+            
+            Type valueType = value.GetType();
+            
+            // For reference types (excluding strings), check for circular references
+            if (!valueType.IsValueType && !(value is string))
+            {
+                if (visited == null)
+                    visited = new HashSet<object>(new ReferenceEqualityComparer());
+                    
+                if (visited.Contains(value))
+                    return "[circular reference]";
+                    
+                visited.Add(value);
+            }
 
             // Handle common Unity types
             if (value is Vector2 vector2)
@@ -330,8 +591,8 @@ namespace McpUnity.Resources
 
             if (value is Bounds bounds)
                 return new JObject { 
-                    ["center"] = SerializeValue(bounds.center), 
-                    ["size"] = SerializeValue(bounds.size) 
+                    ["center"] = SerializeValue(bounds.center, depth + 1, visited), 
+                    ["size"] = SerializeValue(bounds.size, depth + 1, visited) 
                 };
 
             if (value is Rect rect)
@@ -340,24 +601,38 @@ namespace McpUnity.Resources
             if (value is UnityEngine.Object unityObject)
                 return unityObject != null ? unityObject.name : null;
 
-            // Handle arrays and lists
+            // Handle arrays and lists with item limit
             if (value is System.Collections.IList list)
             {
                 JArray array = new JArray();
+                int count = 0;
                 foreach (var item in list)
                 {
-                    array.Add(SerializeValue(item));
+                    if (count >= MaxCollectionItems)
+                    {
+                        array.Add($"[... and {list.Count - count} more items]");
+                        break;
+                    }
+                    array.Add(SerializeValue(item, depth + 1, visited));
+                    count++;
                 }
                 return array;
             }
 
-            // Handle dictionaries
+            // Handle dictionaries with item limit
             if (value is System.Collections.IDictionary dict)
             {
                 JObject obj = new JObject();
+                int count = 0;
                 foreach (System.Collections.DictionaryEntry entry in dict)
                 {
-                    obj[entry.Key.ToString()] = SerializeValue(entry.Value);
+                    if (count >= MaxCollectionItems)
+                    {
+                        obj["_truncated"] = $"{dict.Count - count} more entries";
+                        break;
+                    }
+                    obj[entry.Key.ToString()] = SerializeValue(entry.Value, depth + 1, visited);
+                    count++;
                 }
                 return obj;
             }
@@ -366,8 +641,14 @@ namespace McpUnity.Resources
             if (value is Enum enumValue)
                 return enumValue.ToString();
 
-            // Use default serialization for primitive types
-            return JToken.FromObject(value);
+            // Handle primitive types directly
+            if (valueType.IsPrimitive || value is string || value is decimal)
+            {
+                return JToken.FromObject(value);
+            }
+
+            // For complex types we don't recognize, return type name to avoid unsafe deep serialization
+            return $"[{valueType.Name}]";
         }
     }
 }

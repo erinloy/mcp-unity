@@ -45,6 +45,12 @@ namespace McpUnity
                     $"Server started successfully!\n\nListening on port {McpUnitySettings.Instance.Port}\nPath: /McpUnity", 
                     "OK");
             }
+            else if (server.HasScheduledStart)
+            {
+                EditorUtility.DisplayDialog("MCP Unity", 
+                    $"Port {McpUnitySettings.Instance.Port} is still in use; the start will be retried automatically.\n\n{server.ScheduledStartStatus}", 
+                    "OK");
+            }
             else
             {
                 McpLogger.LogError("Server failed to start - check Unity Console for errors");
@@ -104,6 +110,12 @@ namespace McpUnity
                 McpLogger.LogInfo($"✅ Server force-restarted on port {McpUnitySettings.Instance.Port}");
                 EditorUtility.DisplayDialog("MCP Unity",
                     $"Server force-restarted successfully!\n\nListening on port {McpUnitySettings.Instance.Port}",
+                    "OK");
+            }
+            else if (server.HasScheduledStart)
+            {
+                EditorUtility.DisplayDialog("MCP Unity",
+                    $"The old server was torn down, but port {McpUnitySettings.Instance.Port} is not released yet; the start will be retried automatically.\n\n{server.ScheduledStartStatus}",
                     "OK");
             }
             else
@@ -198,12 +210,12 @@ namespace McpUnity
             
             McpLogger.LogInfo("=== Testing WebSocket Connection ===");
             McpLogger.LogInfo($"Server listening on port {McpUnitySettings.Instance.Port}");
-            McpLogger.LogInfo($"WebSocket endpoint: ws://localhost:{McpUnitySettings.Instance.Port}/McpUnity");
+            McpLogger.LogInfo($"WebSocket endpoint: ws://127.0.0.1:{McpUnitySettings.Instance.Port}/McpUnity");
             McpLogger.LogInfo("Clients can now connect to this endpoint");
             
             EditorUtility.DisplayDialog("MCP Unity Connection Info", 
                 $"Server is ready for connections!\n\n" +
-                $"Endpoint: ws://localhost:{McpUnitySettings.Instance.Port}/McpUnity\n" +
+                $"Endpoint: ws://127.0.0.1:{McpUnitySettings.Instance.Port}/McpUnity\n" +
                 $"Status: LISTENING\n\n" +
                 $"Run unity-mcp.exe to connect as MCP client.", 
                 "OK");

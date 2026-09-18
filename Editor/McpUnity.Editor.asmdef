@@ -13,6 +13,12 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "Unity",
+            "expression": "6000.3",
+            "define": "MCP_UNITY_ENTITY_ID_API"
+        }
+    ],
     "noEngineReferences": false
 }

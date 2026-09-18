@@ -17,7 +17,7 @@ namespace McpUnity.DirectMcp.Services
         event EventHandler<JObject>? MessageReceived;
         event EventHandler? ConnectionLost;
         event EventHandler? ConnectionRestored;
-        Task ConnectAsync(string uri, CancellationToken cancellationToken = default);
+        Task ConnectAsync(string uri, string authToken, CancellationToken cancellationToken = default);
         Task DisconnectAsync();
         Task SendAsync(JObject message, CancellationToken cancellationToken = default);
     }
@@ -41,7 +41,7 @@ namespace McpUnity.DirectMcp.Services
             _logger = logger;
         }
 
-        public async Task ConnectAsync(string uri, CancellationToken cancellationToken = default)
+        public async Task ConnectAsync(string uri, string authToken, CancellationToken cancellationToken = default)
         {
             await _connectionLock.WaitAsync(cancellationToken);
             try
@@ -56,6 +56,10 @@ namespace McpUnity.DirectMcp.Services
 
                 _webSocket = new ClientWebSocket();
                 _webSocket.Options.SetRequestHeader("X-Client-Name", "Unity MCP Server");
+                // The Unity Editor requires HTTP Basic credentials on the handshake and rejects any
+                // request carrying an Origin header (ClientWebSocket sends none).
+                _webSocket.Options.SetRequestHeader("Authorization", UnityBridgeAuthentication.CreateAuthorizationHeader(authToken));
+                _webSocket.Options.CollectHttpResponseDetails = true;
                 
                 // Set a reasonable timeout
                 _webSocket.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
@@ -76,6 +80,13 @@ namespace McpUnity.DirectMcp.Services
                     }
                     catch (WebSocketException wsEx)
                     {
+                        var statusCode = (int)_webSocket.HttpStatusCode;
+                        if (statusCode == 401 || statusCode == 403)
+                        {
+                            throw new UnityBridgeAuthenticationException(
+                                $"Unity rejected MCP authentication (HTTP {statusCode}). Check or regenerate the project authentication token (Tools > MCP Unity > Server Window).");
+                        }
+
                         _logger.LogDebug("WebSocket connection failed: {Message}", wsEx.Message);
                         throw;
                     }
@@ -161,7 +172,9 @@ namespace McpUnity.DirectMcp.Services
         private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
         {
             var buffer = new byte[65536]; // Increased from 4KB to 64KB for large tool responses
-            var messageBuilder = new StringBuilder();
+            // Accumulate raw bytes and decode once per message so multi-byte UTF-8 sequences split
+            // across frames are decoded correctly.
+            using var messageBytes = new System.IO.MemoryStream();
 
             try
             {
@@ -171,12 +184,12 @@ namespace McpUnity.DirectMcp.Services
 
                     if (result.MessageType == WebSocketMessageType.Text)
                     {
-                        messageBuilder.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                        messageBytes.Write(buffer, 0, result.Count);
 
                         if (result.EndOfMessage)
                         {
-                            var message = messageBuilder.ToString();
-                            messageBuilder.Clear();
+                            var message = Encoding.UTF8.GetString(messageBytes.GetBuffer(), 0, (int)messageBytes.Length);
+                            messageBytes.SetLength(0);
 
                             try
                             {

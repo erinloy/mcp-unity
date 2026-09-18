@@ -1,10 +1,20 @@
 # Test WebSocket connection to Unity
-$uri = "ws://localhost:8090/McpUnity"
+# Reads the port from ProjectSettings/McpUnitySettings.json and authenticates with the
+# project token at Library/McpUnity/bridge-token (the Editor rejects unauthenticated clients).
+param(
+    [string]$ProjectPath = (Get-Location).Path
+)
+
+$settings = Get-Content (Join-Path $ProjectPath "ProjectSettings/McpUnitySettings.json") -Raw | ConvertFrom-Json
+$token = (Get-Content (Join-Path $ProjectPath "Library/McpUnity/bridge-token") -Raw).Trim()
+$uri = "ws://127.0.0.1:$($settings.Port)/McpUnity"
 
 try {
     # Create a simple WebSocket client
     $ws = New-Object System.Net.WebSockets.ClientWebSocket
     $ws.Options.SetRequestHeader("X-Client-Name", "Test Client")
+    $credentials = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes("mcp-unity:$token"))
+    $ws.Options.SetRequestHeader("Authorization", "Basic $credentials")
     
     $cts = New-Object System.Threading.CancellationTokenSource
     $cts.CancelAfter(5000) # 5 second timeout

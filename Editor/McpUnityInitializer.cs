@@ -44,30 +44,33 @@ namespace McpUnity
             {
                 // Wait a bit more to ensure Unity is fully ready
                 await Task.Delay(500);
-                
+
+                // Null when the server is disabled for this process (batch mode without opt-in)
+                var server = McpUnityServer.Instance;
+                if (server == null)
+                {
+                    return;
+                }
+
                 // Check if we should auto-start
                 if (!McpUnitySettings.Instance.AutoStartServer)
                 {
                     McpLogger.LogInfo("[MCP] Auto-start disabled in settings");
                     return;
                 }
-                
+
                 McpLogger.LogInfo("[MCP] Starting MCP Unity System (delayed initialization)...");
-                
-                // Ensure C# server is built
-                if (!McpUtils.EnsureCSharpServerBuilt())
+
+                // Ensure C# server is built (never in batch mode: a headless host must ship a prebuilt server)
+                if (!Application.isBatchMode && !McpUtils.EnsureCSharpServerBuilt())
                 {
                     McpLogger.LogWarning("[MCP] C# server build failed or executable not found. Server may not start properly.");
                 }
-                
-                // Initialize the server
-                var server = McpUnityServer.Instance;
-                if (server != null && !server.IsListening)
+
+                // Start the server unless it is already listening or a (retrying) start is pending
+                if (!server.IsListening && !server.HasScheduledStart)
                 {
                     server.StartServer();
-                    
-                    // Wait for server to be ready
-                    await Task.Delay(100);
                 }
                 
                 // Initialize notifications

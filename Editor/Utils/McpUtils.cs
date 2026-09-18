@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Reflection;
 using McpUnity.Unity;
 using UnityEngine;
 using UnityEditor;
@@ -10,42 +11,62 @@ using Newtonsoft.Json.Linq;
 namespace McpUnity.Utils
 {
     /// <summary>
-    /// Utility class for MCP configuration operations
+    /// Controls how the path to the MCP server executable (Tools/unity-mcp/unity-mcp.exe) is rendered in generated MCP configs.
     /// </summary>
+    public enum PathMode
+    {
+        /// <summary>Absolute filesystem path. Required for per-user/global configs (Cursor, Windsurf, etc.).</summary>
+        Absolute,
+        /// <summary>Path relative to the Unity project root. Used for OpenCode's opencode.json and project-local configs.</summary>
+        ProjectRelative,
+        /// <summary>Project-relative path prefixed with ${workspaceFolder}/. Used for VS Code / GitHub Copilot's .vscode/mcp.json.</summary>
+        VSCodeWorkspaceFolder
+    }
+
     /// <summary>
     /// Utility class for MCP configuration and system operations
     /// </summary>
     public static class McpUtils
     {
         /// <summary>
+        /// File name of the C# MCP server project inside Server~.
+        /// </summary>
+        public const string ServerProjectFileName = "UnityMcp.csproj";
+
+        // Cached result for Multiplayer Play Mode clone detection
+        private static bool? _isMultiplayerPlayModeClone;
+
+        /// <summary>
         /// Generates the MCP configuration JSON to setup the Unity MCP server in different AI Clients
         /// </summary>
-        public static string GenerateMcpConfigJson(bool useTabsIndentation)
+        public static string GenerateMcpConfigJson(bool useTabsIndentation, PathMode pathMode = PathMode.Absolute)
         {
-            // Use the predictable location at project root
-            string projectRoot = GetUnityProjectRoot();
-            string exePath = Path.Combine(projectRoot, "Tools", "unity-mcp", "unity-mcp.exe");
-            
             var config = new Dictionary<string, object>
             {
                 { "mcpServers", new Dictionary<string, object>
                     {
                         { "mcp-unity", new Dictionary<string, object>
                             {
-                                { "command", exePath },
-                                { "args", new string[] { } }  // No arguments needed for C# exe
+                                { "command", GetServerCommandPath(pathMode) },
+                                { "args", new string[] { } },
+                                { "env", new Dictionary<string, object>
+                                    {
+                                        { "MCP_UNITY_SETTINGS_PATH", GetSettingsFilePath() },
+                                        { "MCP_UNITY_AUTH_TOKEN_PATH", GetAuthTokenFilePath() }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             };
-            
+
             // Initialize string writer with proper indentation
             var stringWriter = new StringWriter();
             using (var jsonWriter = new JsonTextWriter(stringWriter))
             {
                 jsonWriter.Formatting = Formatting.Indented;
-                
+
                 // Set indentation character and count
                 if (useTabsIndentation)
                 {
@@ -57,13 +78,93 @@ namespace McpUnity.Utils
                     jsonWriter.IndentChar = ' ';
                     jsonWriter.Indentation = 2;
                 }
-                
+
                 // Serialize directly to the JsonTextWriter
                 var serializer = new JsonSerializer();
                 serializer.Serialize(jsonWriter, config);
             }
-            
+
             return stringWriter.ToString().Replace("\\", "/").Replace("//", "/");
+        }
+
+        /// <summary>
+        /// Generates the MCP configuration JSON for OpenCode (https://opencode.ai/).
+        /// OpenCode uses a different schema than the standard `mcpServers` shape:
+        ///   { "$schema": ..., "mcp": { "mcp-unity": { "type": "local", "enabled": true, "command": [...], "environment": {} } } }
+        /// </summary>
+        public static string GenerateOpenCodeConfigJson(bool useTabsIndentation, PathMode pathMode = PathMode.Absolute)
+        {
+            var config = new Dictionary<string, object>
+            {
+                { "$schema", "https://opencode.ai/config.json" },
+                { "mcp", new Dictionary<string, object>
+                    {
+                        { "mcp-unity", new Dictionary<string, object>
+                            {
+                                { "type", "local" },
+                                { "enabled", true },
+                                { "command", new[] { GetServerCommandPath(pathMode) } },
+                                { "environment", new Dictionary<string, object>
+                                    {
+                                        { "MCP_UNITY_SETTINGS_PATH", GetSettingsFilePath() },
+                                        { "MCP_UNITY_AUTH_TOKEN_PATH", GetAuthTokenFilePath() }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            var stringWriter = new StringWriter();
+            using (var jsonWriter = new JsonTextWriter(stringWriter))
+            {
+                jsonWriter.Formatting = Formatting.Indented;
+
+                if (useTabsIndentation)
+                {
+                    jsonWriter.IndentChar = '\t';
+                    jsonWriter.Indentation = 1;
+                }
+                else
+                {
+                    jsonWriter.IndentChar = ' ';
+                    jsonWriter.Indentation = 2;
+                }
+
+                var serializer = new JsonSerializer();
+                serializer.Serialize(jsonWriter, config);
+            }
+
+            return stringWriter.ToString().Replace("\\", "/").Replace("//", "/");
+        }
+
+        /// <summary>
+        /// Generates the MCP configuration TOML to setup the Unity MCP server in TOML-based AI Clients (e.g., Codex CLI)
+        /// </summary>
+        /// <returns>The TOML configuration string for mcp-unity server</returns>
+        public static string GenerateMcpConfigToml(PathMode pathMode = PathMode.Absolute)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("[mcp_servers.mcp-unity]");
+            sb.AppendLine($"command = \"{GetServerCommandPath(pathMode)}\"");
+            sb.AppendLine("args = []");
+            sb.AppendLine($"env = {{ MCP_UNITY_SETTINGS_PATH = \"{GetSettingsFilePath()}\", MCP_UNITY_AUTH_TOKEN_PATH = \"{GetAuthTokenFilePath()}\" }}");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Returns the project settings path used by the MCP server. Generated configurations pass
+        /// it explicitly so the server cannot accidentally select another Unity project by cwd.
+        /// </summary>
+        private static string GetSettingsFilePath()
+        {
+            return Path.Combine(GetUnityProjectRoot(), "ProjectSettings", "McpUnitySettings.json").Replace("\\", "/");
+        }
+
+        private static string GetAuthTokenFilePath()
+        {
+            return McpUnityAuthentication.TokenPath.Replace("\\", "/");
         }
 
         /// <summary>
@@ -74,83 +175,87 @@ namespace McpUnity.Utils
             // Get the path to the Assets folder and go up one level
             return Path.GetDirectoryName(Application.dataPath);
         }
-        
+
         /// <summary>
-        /// Gets the absolute path to the Server directory containing package.json (root server dir).
+        /// Absolute path of the deployed C# MCP server executable: &lt;ProjectRoot&gt;/Tools/unity-mcp/unity-mcp.exe.
+        /// The Server~ project's post-build step deploys it there.
+        /// </summary>
+        public static string GetServerExecutablePath()
+        {
+            return Path.Combine(GetUnityProjectRoot(), "Tools", "unity-mcp", "unity-mcp.exe");
+        }
+
+        /// <summary>
+        /// Returns the path to the MCP server executable rendered according to the given <see cref="PathMode"/>.
+        /// All returned paths use forward slashes.
+        /// </summary>
+        private static string GetServerCommandPath(PathMode mode)
+        {
+            string absoluteExePath = GetServerExecutablePath().Replace("\\", "/");
+
+            if (mode == PathMode.Absolute)
+            {
+                return absoluteExePath;
+            }
+
+            string projectRoot = GetUnityProjectRoot().Replace("\\", "/");
+            string relativeExePath = Path.GetRelativePath(projectRoot, absoluteExePath).Replace("\\", "/");
+
+            if (mode == PathMode.VSCodeWorkspaceFolder)
+            {
+                return "${workspaceFolder}/" + relativeExePath;
+            }
+
+            return relativeExePath;
+        }
+
+        /// <summary>
+        /// Gets the absolute path to the Server~ directory containing the C# MCP server project.
         /// Works whether MCP Unity is installed via Package Manager or directly in the Assets folder
         /// </summary>
         public static string GetServerPath()
         {
             // First, try to find the package info via Package Manager
             var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssetPath($"Packages/{McpUnitySettings.PackageName}");
-                
+
             if (packageInfo != null && !string.IsNullOrEmpty(packageInfo.resolvedPath))
             {
                 string serverPath = Path.Combine(packageInfo.resolvedPath, "Server~");
 
                 return CleanPathPrefix(serverPath);
             }
-            
-            // Check if installed directly in Assets folder
-            // Look for the McpUnity.Editor assembly to find the installation location
+
+            // Installed directly in the Assets folder: locate the McpUnity.Editor assembly definition
             var mcpEditorAssets = AssetDatabase.FindAssets("McpUnity.Editor t:AssemblyDefinitionAsset");
-            
-            if (mcpEditorAssets.Length > 0)
+            foreach (var guid in mcpEditorAssets)
             {
-                // Get the path to the McpUnity.Editor.asmdef file
-                string asmdefPath = AssetDatabase.GUIDToAssetPath(mcpEditorAssets[0]);
-                
-                // Navigate from Editor/McpUnity.Editor.asmdef to Server~ directory
+                string asmdefPath = AssetDatabase.GUIDToAssetPath(guid);
+                if (Path.GetFileName(asmdefPath) != "McpUnity.Editor.asmdef")
+                {
+                    continue;
+                }
+
+                // Navigate from Editor/McpUnity.Editor.asmdef to the package root, then to Server~
                 string fullAsmdefPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", asmdefPath));
-                string mcpUnityRoot = Path.GetDirectoryName(Path.GetDirectoryName(fullAsmdefPath)); // Go up from Editor to mcp-unity root
+                string mcpUnityRoot = Path.GetDirectoryName(Path.GetDirectoryName(fullAsmdefPath));
                 string serverPath = Path.Combine(mcpUnityRoot, "Server~");
-                
-                // Verify the Server~ directory exists
-                if (Directory.Exists(serverPath))
+
+                if (File.Exists(Path.Combine(serverPath, ServerProjectFileName)))
                 {
                     return CleanPathPrefix(serverPath);
                 }
             }
-            
-            // Fallback: Try to find by looking for README.md files that might be in mcp-unity root
-            var readmeAssets = AssetDatabase.FindAssets("README t:TextAsset");
-            
-            foreach (var asset in readmeAssets)
+
+            // Last resort: scan Assets for a Server~ folder containing the server project
+            string[] dirs = Directory.GetDirectories("Assets", "Server~", SearchOption.AllDirectories);
+            for (int n = 0; n < dirs.Length; n++)
             {
-                string relativePath = AssetDatabase.GUIDToAssetPath(asset);
-                
-                // Check if this is the mcp-unity README
-                if (relativePath.Contains("mcp-unity") && Path.GetFileName(relativePath) == "README.md")
+                if (File.Exists(Path.Combine(dirs[n], ServerProjectFileName)))
                 {
-                    string fullPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", relativePath));
-                    string mcpUnityRoot = Path.GetDirectoryName(fullPath);
-                    string serverPath = Path.Combine(mcpUnityRoot, "Server~");
-                    
-                    // Verify the Server~ directory exists
-                    if (Directory.Exists(serverPath))
-                    {
-                        return CleanPathPrefix(serverPath);
-                    }
+                    return CleanPathPrefix(Path.GetFullPath(dirs[n]));
                 }
             }
-            
-            // Last resort: Check common locations relative to Assets
-            string assetsPath = Application.dataPath;
-            string[] possiblePaths = new[]
-            {
-                Path.Combine(assetsPath, "mcp-unity", "Server~"),
-                Path.Combine(assetsPath, "MCP Unity", "Server~"),
-                Path.Combine(assetsPath, "McpUnity", "Server~")
-            };
-            
-            foreach (var path in possiblePaths)
-            {
-                if (Directory.Exists(path))
-                {
-                    return CleanPathPrefix(path);
-                }
-            }
-            
+
             // If we get here, we couldn't find the server path
             var errorString = "[MCP Unity] Could not locate Server directory. Please check the installation of the MCP Unity package.";
 
@@ -174,87 +279,79 @@ namespace McpUnity.Utils
         }
 
         /// <summary>
+        /// Encodes a file path for use in file:// URLs by replacing spaces with %20.
+        /// </summary>
+        /// <param name="path">The path to encode.</param>
+        /// <returns>The encoded path suitable for file:// URLs.</returns>
+        public static string EncodePathForFileUrl(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return path;
+
+            return path.Replace(" ", "%20");
+        }
+
+        /// <summary>
+        /// Validates the server path and returns true if it contains the C# MCP server project.
+        /// </summary>
+        /// <param name="serverPath">The server path to validate.</param>
+        /// <returns>True if path is valid and usable, false if path has critical issues.</returns>
+        public static bool ValidateServerPath(string serverPath)
+        {
+            if (string.IsNullOrEmpty(serverPath))
+            {
+                Debug.LogError("[MCP Unity] Server path is null or empty. Cannot validate.");
+                return false;
+            }
+
+            // Verify the path exists
+            if (!Directory.Exists(serverPath))
+            {
+                Debug.LogError($"[MCP Unity] Server path does not exist: {serverPath}");
+                return false;
+            }
+
+            // Verify required files exist
+            string projectFilePath = Path.Combine(serverPath, ServerProjectFileName);
+            if (!File.Exists(projectFilePath))
+            {
+                Debug.LogError($"[MCP Unity] {ServerProjectFileName} not found in server path: {serverPath}");
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Ensures the C# MCP server is built and available
         /// </summary>
         /// <returns>True if the server executable exists or was successfully built</returns>
         public static bool EnsureCSharpServerBuilt()
         {
-            string projectRoot = GetUnityProjectRoot();
-            string exePath = Path.Combine(projectRoot, "Tools", "unity-mcp", "unity-mcp.exe");
-            
-            // Check if already built at the new location
+            string exePath = GetServerExecutablePath();
+
             if (File.Exists(exePath))
             {
                 McpLogger.LogInfo($"[MCP] C# server already built at: {exePath}");
                 return true;
             }
-            
+
             McpLogger.LogWarning($"[MCP] C# server executable not found. Expected at: {exePath}");
-            
-            // Attempt to build the server automatically
-            string serverPath = GetServerPath();
-            string projectPath = Path.Combine(serverPath, "UnityMcp.csproj");
-            
-            if (File.Exists(projectPath))
+
+            var server = McpUnityServer.Instance;
+            if (server == null)
             {
-                McpLogger.LogInfo($"[MCP Unity] Auto-building MCP server from: {projectPath}");
-                
-                var processInfo = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "dotnet",
-                    Arguments = $"publish \"{projectPath}\" -c Release -r win-x64 --self-contained",
-                    WorkingDirectory = serverPath,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                };
-                
-                try
-                {
-                    using (var process = System.Diagnostics.Process.Start(processInfo))
-                    {
-                        if (process != null)
-                        {
-                            string output = process.StandardOutput.ReadToEnd();
-                            string error = process.StandardError.ReadToEnd();
-                            process.WaitForExit();
-                            
-                            if (process.ExitCode == 0)
-                            {
-                                McpLogger.LogInfo("[MCP Unity] Successfully built MCP server");
-                                // Check if the exe was created at the new location (post-build should have copied it)
-                                if (File.Exists(exePath))
-                                {
-                                    return true;
-                                }
-                                else
-                                {
-                                    McpLogger.LogError($"[MCP Unity] Build succeeded but executable not found at: {exePath}");
-                                }
-                            }
-                            else
-                            {
-                                McpLogger.LogError($"[MCP Unity] Build failed with exit code {process.ExitCode}");
-                                if (!string.IsNullOrEmpty(error))
-                                {
-                                    McpLogger.LogError($"[MCP Unity] Build error: {error}");
-                                }
-                            }
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
-                    McpLogger.LogError($"[MCP Unity] Failed to auto-build server: {e.Message}");
-                }
+                McpLogger.LogError("[MCP] Cannot build the C# server: the MCP Unity server is disabled in this process (batch mode).");
+                return false;
             }
-            else
+
+            server.InstallServer();
+            if (File.Exists(exePath))
             {
-                McpLogger.LogError($"[MCP Unity] Project file not found at: {projectPath}");
+                return true;
             }
-            
-            McpLogger.LogInfo("[MCP] Please build the server manually using: dotnet publish -c Release -r win-x64 --self-contained in the Server~ directory");
+
+            McpLogger.LogError($"[MCP] Please build the server manually with: dotnet publish -c Release -r win-x64 --self-contained (in {GetServerPath()})");
             return false;
         }
 
@@ -295,12 +392,118 @@ namespace McpUnity.Utils
         }
 
         /// <summary>
-        /// Adds the MCP configuration to the GitHub Copilot config file
+        /// Adds the MCP configuration to the Google Antigravity config file
+        /// </summary>
+        public static bool AddToAntigravityConfig(bool useTabsIndentation)
+        {
+            string configFilePath = GetAntigravityConfigPath();
+            return AddToConfigFile(configFilePath, useTabsIndentation, "Google Antigravity");
+        }
+
+        /// <summary>
+        /// Adds the MCP configuration to the GitHub Copilot config file.
+        /// Uses ${workspaceFolder}-prefixed path so the config is portable across machines when committed to git.
         /// </summary>
         public static bool AddToGitHubCopilotConfig(bool useTabsIndentation)
         {
             string configFilePath = GetGitHubCopilotConfigPath();
-            return AddToConfigFile(configFilePath, useTabsIndentation, "GitHub Copilot");
+            return AddToConfigFile(configFilePath, useTabsIndentation, "GitHub Copilot", PathMode.VSCodeWorkspaceFolder);
+        }
+
+        /// <summary>
+        /// Adds the MCP configuration to the Codex CLI config file (TOML format)
+        /// </summary>
+        public static bool AddToCodexCliConfig(bool useTabsIndentation)
+        {
+            string configFilePath = GetCodexCliConfigPath();
+            return AddToTomlConfigFile(configFilePath, "Codex CLI");
+        }
+
+        /// <summary>
+        /// Adds the MCP configuration to the OpenCode config file (opencode.json in project root).
+        /// OpenCode uses a custom JSON schema, so this does not reuse the standard mcpServers helpers.
+        /// Uses a project-relative path so the config is portable across machines when committed to git.
+        /// </summary>
+        public static bool AddToOpenCodeConfig(bool useTabsIndentation)
+        {
+            string configFilePath = GetOpenCodeConfigPath();
+            return AddToOpenCodeConfigFile(configFilePath, useTabsIndentation, PathMode.ProjectRelative);
+        }
+
+        /// <summary>
+        /// Adds the MCP configuration to the project-local Cursor config (<ProjectRoot>/.cursor/mcp.json).
+        /// Uses a project-relative path so the config is portable across machines when committed to git.
+        /// </summary>
+        public static bool AddToCursorProjectConfig(bool useTabsIndentation)
+        {
+            return AddToConfigFile(GetCursorProjectConfigPath(), useTabsIndentation, "Cursor (Project)", PathMode.ProjectRelative);
+        }
+
+        /// <summary>
+        /// Adds the MCP configuration to the project-local Claude Code config (<ProjectRoot>/.mcp.json).
+        /// This file is Claude Code's team-shared MCP config and is intended to be committed to git.
+        /// Uses a project-relative path so the config is portable across machines.
+        /// </summary>
+        public static bool AddToClaudeCodeProjectConfig(bool useTabsIndentation)
+        {
+            return AddToConfigFile(GetClaudeCodeProjectConfigPath(), useTabsIndentation, "Claude Code (Project)", PathMode.ProjectRelative);
+        }
+
+        /// <summary>
+        /// Adds the MCP configuration to the project-local Codex CLI config (<ProjectRoot>/.codex/config.toml).
+        /// Codex layers this over the global ~/.codex/config.toml only when the project is marked trusted
+        /// (Codex prompts the user the first time they run `codex` from the project root).
+        /// Uses a project-relative path so the config is portable across machines.
+        /// </summary>
+        public static bool AddToCodexCliProjectConfig(bool useTabsIndentation)
+        {
+            return AddToTomlConfigFile(GetCodexCliProjectConfigPath(), "Codex CLI (Project)", PathMode.ProjectRelative);
+        }
+
+        /// <summary>
+        /// Returns whether automatic MCP configuration is supported for the given product on the current platform.
+        /// </summary>
+        public static bool IsAutoConfigSupported(string productName)
+        {
+            switch (productName)
+            {
+                case "Claude Code":
+                case "Claude Code (Project)":
+                case "Codex CLI":
+                case "Codex CLI (Project)":
+                case "Cursor (Project)":
+                case "GitHub Copilot":
+                case "OpenCode":
+                    return Application.platform == RuntimePlatform.WindowsEditor
+                        || Application.platform == RuntimePlatform.OSXEditor
+                        || Application.platform == RuntimePlatform.LinuxEditor;
+                case "Windsurf":
+                case "Claude Desktop":
+                case "Cursor":
+                case "Google Antigravity":
+                    return Application.platform == RuntimePlatform.WindowsEditor
+                        || Application.platform == RuntimePlatform.OSXEditor;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Returns a human-readable reason when automatic MCP configuration is unsupported.
+        /// </summary>
+        public static string GetAutoConfigUnsupportedReason(string productName)
+        {
+            if (IsAutoConfigSupported(productName))
+            {
+                return null;
+            }
+
+            if (Application.platform == RuntimePlatform.LinuxEditor)
+            {
+                return $"Automatic {productName} configuration is currently available on Linux only for Claude Code, Codex CLI, Cursor (Project), GitHub Copilot, and OpenCode.";
+            }
+
+            return $"Automatic {productName} configuration is not supported on {Application.platform}.";
         }
 
         /// <summary>
@@ -309,17 +512,18 @@ namespace McpUnity.Utils
         /// <param name="configFilePath">Path to the config file</param>
         /// <param name="useTabsIndentation">Whether to use tabs for indentation</param>
         /// <param name="productName">Name of the product (for error messages)</param>
+        /// <param name="pathMode">How to render the path to the MCP server executable</param>
         /// <returns>True if successfuly added the config, false otherwise</returns>
-        private static bool AddToConfigFile(string configFilePath, bool useTabsIndentation, string productName)
+        private static bool AddToConfigFile(string configFilePath, bool useTabsIndentation, string productName, PathMode pathMode = PathMode.Absolute)
         {
             if (string.IsNullOrEmpty(configFilePath))
             {
                 Debug.LogError($"{productName} config file not found. Please make sure {productName} is installed.");
                 return false;
             }
-                
+
             // Generate fresh MCP config JSON
-            string mcpConfigJson = GenerateMcpConfigJson(useTabsIndentation);
+            string mcpConfigJson = GenerateMcpConfigJson(useTabsIndentation, pathMode);
             
             try
             {
@@ -452,25 +656,43 @@ namespace McpUnity.Utils
             // Returns the absolute path to the global Claude configuration file.
             // Windows: %USERPROFILE%\.claude.json
             // macOS/Linux: $HOME/.claude.json
-            string homeDir;
-
-            if (Application.platform == RuntimePlatform.WindowsEditor)
+            if (!TryGetUserHomeDirectory("Claude Code", out string homeDir))
             {
-                // Windows: %USERPROFILE%\.claude.json
-                homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            }
-            else if (Application.platform == RuntimePlatform.OSXEditor)
-            {
-                // macOS: ~/.claude.json
-                homeDir = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
-            }
-            else
-            {
-                Debug.LogError("Unsupported platform for Claude configuration path resolution");
                 return null;
             }
 
             return Path.Combine(homeDir, ".claude.json");
+        }
+
+        /// <summary>
+        /// Gets the path to the Google Antigravity MCP config file based on the current OS
+        /// </summary>
+        /// <returns>The path to the Google Antigravity MCP config file</returns>
+        private static string GetAntigravityConfigPath()
+        {
+            // Base path depends on the OS
+            string basePath;
+
+            if (Application.platform == RuntimePlatform.WindowsEditor)
+            {
+                // Windows: %USERPROFILE%/.gemini/antigravity/mcp_config.json
+                basePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gemini", "antigravity");
+            }
+            else if (Application.platform == RuntimePlatform.OSXEditor)
+            {
+                // macOS: ~/Library/Application Support/.gemini/antigravity/mcp_config.json
+                string homeDir = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+                basePath = Path.Combine(homeDir, "Library", "Application Support", ".gemini", "antigravity");
+            }
+            else
+            {
+                // Unsupported platform
+                Debug.LogError("Unsupported platform for Google Antigravity MCP config");
+                return null;
+            }
+
+            // Return the path to the mcp_config.json file
+            return Path.Combine(basePath, "mcp_config.json");
         }
 
         /// <summary>
@@ -486,80 +708,241 @@ namespace McpUnity.Utils
         }
 
         /// <summary>
-        /// Runs an npm command (such as install or build) in the specified working directory.
-        /// Handles cross-platform compatibility (Windows/macOS/Linux) for invoking npm.
-        /// Logs output and errors to the Unity console.
+        /// Gets the path to the OpenCode config file (opencode.json in the Unity project root).
+        /// OpenCode reads its config per-project, not per-user, so this path is OS-independent.
         /// </summary>
-        /// <param name="arguments">Arguments to pass to npm (e.g., "install" or "run build").</param>
-        /// <param name="workingDirectory">The working directory where the npm command should be executed.</param>
-        public static void RunNpmCommand(string arguments, string workingDirectory)
+        /// <returns>The path to the OpenCode config file</returns>
+        private static string GetOpenCodeConfigPath()
         {
-            string npmExecutable = McpUnitySettings.Instance.NpmExecutablePath;
-            bool useCustomNpmPath = !string.IsNullOrWhiteSpace(npmExecutable);
+            string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+            return Path.Combine(projectRoot, "opencode.json");
+        }
 
-            System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo
-            {
-                WorkingDirectory = workingDirectory,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false, // Important for redirection and direct execution
-                CreateNoWindow = true
-            };
+        /// <summary>
+        /// Adds the MCP configuration to the OpenCode config file. Preserves existing
+        /// `$schema` and any unrelated entries under `mcp`, only upserting `mcp["mcp-unity"]`.
+        /// </summary>
+        private static bool AddToOpenCodeConfigFile(string configFilePath, bool useTabsIndentation, PathMode pathMode = PathMode.Absolute)
+        {
+            const string productName = "OpenCode";
 
-            if (useCustomNpmPath)
+            if (string.IsNullOrEmpty(configFilePath))
             {
-                // Use the custom path directly
-                startInfo.FileName = npmExecutable;
-                startInfo.Arguments = arguments;
-            }
-            else if (Application.platform == RuntimePlatform.WindowsEditor)
-            {
-                // Fallback to cmd.exe to find 'npm' in PATH
-                startInfo.FileName = "cmd.exe";
-                startInfo.Arguments = $"/c npm {arguments}";
-            }
-            else // macOS / Linux
-            {
-                // Fallback to /bin/bash to find 'npm' in PATH
-                startInfo.FileName = "/bin/bash";
-                startInfo.Arguments = $"-c \"npm {arguments}\"";
-
-                // Ensure PATH includes common npm locations and current PATH
-                string currentPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-                string extraPaths = "/usr/local/bin:/opt/homebrew/bin";
-                startInfo.EnvironmentVariables["PATH"] = $"{extraPaths}:{currentPath}";
+                Debug.LogError($"{productName} config file path could not be resolved.");
+                return false;
             }
 
             try
             {
-                using (var process = System.Diagnostics.Process.Start(startInfo))
+                string mcpConfigJson = GenerateOpenCodeConfigJson(useTabsIndentation, pathMode);
+                JObject mcpConfig = JObject.Parse(mcpConfigJson);
+                JToken newServerEntry = mcpConfig["mcp"]?["mcp-unity"];
+
+                if (newServerEntry == null)
                 {
-                    if (process == null)
-                    {
-                        Debug.LogError($"[MCP Unity] Failed to start npm process with arguments: {arguments} in {workingDirectory}. Process object is null.");
-                        return;
-                    }
+                    Debug.LogError($"Failed to generate {productName} configuration: missing mcp-unity entry.");
+                    return false;
+                }
 
-                    string output = process.StandardOutput.ReadToEnd();
-                    string error = process.StandardError.ReadToEnd();
+                if (!File.Exists(configFilePath))
+                {
+                    File.WriteAllText(configFilePath, mcpConfigJson);
+                    return true;
+                }
 
-                    process.WaitForExit();
+                string existingJson = File.ReadAllText(configFilePath);
+                JObject existingConfig = string.IsNullOrWhiteSpace(existingJson)
+                    ? new JObject()
+                    : JObject.Parse(existingJson);
 
-                    if (process.ExitCode == 0)
-                    {
-                        Debug.Log($"[MCP Unity] npm {arguments} completed successfully in {workingDirectory}.\n{output}");
-                    }
-                    else
-                    {
-                        Debug.LogError($"[MCP Unity] npm {arguments} failed in {workingDirectory}. Exit Code: {process.ExitCode}. Error: {error}");
-                    }
+                JObject mcpSection = existingConfig["mcp"] as JObject;
+                if (mcpSection == null)
+                {
+                    mcpSection = new JObject();
+                    existingConfig["mcp"] = mcpSection;
+                }
+
+                mcpSection["mcp-unity"] = newServerEntry;
+
+                File.WriteAllText(configFilePath, existingConfig.ToString(Formatting.Indented));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Failed to add MCP configuration to {productName}: {ex}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Gets the path to the Codex CLI config file based on the current OS
+        /// </summary>
+        /// <returns>The path to the Codex CLI config file</returns>
+        private static string GetCodexCliConfigPath()
+        {
+            // Codex CLI uses ~/.codex/config.toml on all platforms
+            if (!TryGetUserHomeDirectory("Codex CLI", out string homeDir))
+            {
+                return null;
+            }
+
+            return Path.Combine(homeDir, ".codex", "config.toml");
+        }
+
+        /// <summary>
+        /// Gets the path to the project-local Cursor MCP config (<ProjectRoot>/.cursor/mcp.json).
+        /// </summary>
+        private static string GetCursorProjectConfigPath()
+        {
+            string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+            return Path.Combine(projectRoot, ".cursor", "mcp.json");
+        }
+
+        /// <summary>
+        /// Gets the path to the project-local Claude Code MCP config (<ProjectRoot>/.mcp.json).
+        /// This is the team-shared config that Claude Code reads in addition to ~/.claude.json.
+        /// </summary>
+        private static string GetClaudeCodeProjectConfigPath()
+        {
+            string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+            return Path.Combine(projectRoot, ".mcp.json");
+        }
+
+        /// <summary>
+        /// Gets the path to the project-local Codex CLI config (<ProjectRoot>/.codex/config.toml).
+        /// Codex layers this over ~/.codex/config.toml only when the project is marked trusted.
+        /// </summary>
+        private static string GetCodexCliProjectConfigPath()
+        {
+            string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+            return Path.Combine(projectRoot, ".codex", "config.toml");
+        }
+
+        /// <summary>
+        /// Resolves the current user's home directory across supported Unity Editor platforms.
+        /// </summary>
+        private static bool TryGetUserHomeDirectory(string productName, out string homeDir)
+        {
+            if (Application.platform == RuntimePlatform.WindowsEditor)
+            {
+                homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                return true;
+            }
+
+            if (Application.platform == RuntimePlatform.OSXEditor
+                || Application.platform == RuntimePlatform.LinuxEditor)
+            {
+                homeDir = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+                return true;
+            }
+
+            Debug.LogError($"Unsupported platform for {productName} config");
+            homeDir = null;
+            return false;
+        }
+
+        /// <summary>
+        /// Common method to add MCP configuration to a TOML-based config file
+        /// </summary>
+        /// <param name="configFilePath">Path to the TOML config file</param>
+        /// <param name="productName">Name of the product (for error messages)</param>
+        /// <param name="pathMode">How to render the path to the MCP server executable</param>
+        /// <returns>True if successfully added the config, false otherwise</returns>
+        private static bool AddToTomlConfigFile(string configFilePath, string productName, PathMode pathMode = PathMode.Absolute)
+        {
+            if (string.IsNullOrEmpty(configFilePath))
+            {
+                Debug.LogError($"{productName} config file path not found. Please make sure {productName} is installed.");
+                return false;
+            }
+
+            try
+            {
+                // Generate fresh MCP config TOML
+                string mcpServerConfig = "\n" + GenerateMcpConfigToml(pathMode);
+                
+                string directoryPath = Path.GetDirectoryName(configFilePath);
+                
+                // Check if the config file exists
+                if (File.Exists(configFilePath))
+                {
+                    return TryMergeMcpServersToml(configFilePath, mcpServerConfig, productName);
+                }
+                else if (Directory.Exists(directoryPath))
+                {
+                    // Create a new config file
+                    File.WriteAllText(configFilePath, mcpServerConfig.TrimStart());
+                    return true;
+                }
+                else
+                {
+                    // Create directory and file
+                    Directory.CreateDirectory(directoryPath);
+                    File.WriteAllText(configFilePath, mcpServerConfig.TrimStart());
+                    return true;
                 }
             }
             catch (Exception ex)
             {
-                // Use commandToLog here
-                Debug.LogError($"[MCP Unity] Exception while running npm {arguments} in {workingDirectory}. Error: {ex.Message}");
+                Debug.LogError($"Failed to add MCP configuration to {productName}: {ex}");
+                return false;
             }
+        }
+
+        /// <summary>
+        /// Helper to merge mcp_servers.mcp-unity section into an existing TOML config file.
+        /// </summary>
+        /// <param name="configFilePath">Path to the existing TOML config file</param>
+        /// <param name="mcpServerConfig">The new mcp-unity TOML configuration to merge</param>
+        /// <param name="productName">Name of the product (for error messages)</param>
+        /// <returns>True if successfully merged, false otherwise</returns>
+        private static bool TryMergeMcpServersToml(string configFilePath, string mcpServerConfig, string productName)
+        {
+            string existingContent = File.ReadAllText(configFilePath);
+            
+            // Check if mcp-unity is already configured
+            if (existingContent.Contains("[mcp_servers.mcp-unity]"))
+            {
+                // Update existing configuration
+                // Find the start of the mcp-unity section
+                int startIndex = existingContent.IndexOf("[mcp_servers.mcp-unity]", StringComparison.Ordinal);
+                
+                // Find the end of this section (next section header or end of file)
+                int endIndex = FindNextTomlSectionIndex(existingContent, startIndex + 23);
+                
+                string newContent = existingContent.Substring(0, startIndex) + 
+                                  mcpServerConfig.TrimStart() + 
+                                  existingContent.Substring(endIndex);
+                File.WriteAllText(configFilePath, newContent);
+            }
+            else
+            {
+                // Append the new configuration
+                File.AppendAllText(configFilePath, mcpServerConfig);
+            }
+            
+            return true;
+        }
+
+        /// <summary>
+        /// Finds the index of the next TOML section header starting from the given position.
+        /// Returns the length of the content if no next section is found.
+        /// </summary>
+        /// <param name="content">The TOML content to search</param>
+        /// <param name="startPosition">The position to start searching from</param>
+        /// <returns>The index of the next section header, or content length if not found</returns>
+        private static int FindNextTomlSectionIndex(string content, int startPosition)
+        {
+            // Look for patterns like [section] or [section.subsection]
+            int nextSectionIndex = content.IndexOf("\n[", startPosition, StringComparison.Ordinal);
+            
+            if (nextSectionIndex == -1)
+            {
+                // No more sections, return end of content
+                return content.Length;
+            }
+            
+            return nextSectionIndex;
         }
 
         /// <summary>
@@ -628,6 +1011,164 @@ namespace McpUnity.Utils
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Detects if the current Unity Editor instance is a Multiplayer Play Mode clone (additional editor).
+        /// Uses multiple detection methods in order of reliability:
+        /// 1. Command line arguments (-name Player2/3/4 indicates clone)
+        /// 2. Reflection on CurrentPlayer.IsMainEditor property
+        /// 3. Library path heuristics
+        /// Returns false if not a clone or detection fails (allowing normal operation).
+        /// </summary>
+        /// <returns>True if running as a clone instance, false if main editor or detection fails</returns>
+        public static bool IsMultiplayerPlayModeClone()
+        {
+            // Return cached result if available
+            if (_isMultiplayerPlayModeClone.HasValue)
+            {
+                return _isMultiplayerPlayModeClone.Value;
+            }
+
+            try
+            {
+                // Method 1: Check command line arguments (most reliable)
+                // Unity MPPM passes "-name PlayerX" where X > 1 for clones
+                string[] args = Environment.GetCommandLineArgs();
+                for (int i = 0; i < args.Length - 1; i++)
+                {
+                    if (args[i] == "-name" || args[i] == "--name")
+                    {
+                        string playerName = args[i + 1];
+                        // Player1 is the main editor, Player2/3/4 are clones
+                        if (playerName.StartsWith("Player") && playerName != "Player1")
+                        {
+                            _isMultiplayerPlayModeClone = true;
+                            return true;
+                        }
+                        // Found -name argument but it's Player1 (main editor)
+                        if (playerName == "Player1")
+                        {
+                            _isMultiplayerPlayModeClone = false;
+                            return false;
+                        }
+                    }
+                }
+
+                // Method 2: Check for MPPM-specific command line flags
+                foreach (string arg in args)
+                {
+                    // Check for clone-specific flags that Unity might pass
+                    if (arg.Contains("mppm") && arg.Contains("clone"))
+                    {
+                        _isMultiplayerPlayModeClone = true;
+                        return true;
+                    }
+                }
+
+                // Method 3: Try reflection on CurrentPlayer.IsMainEditor (MPPM 1.4+)
+                Assembly mppmAssembly = null;
+                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    string assemblyName = assembly.GetName().Name;
+                    if (assemblyName == "Unity.Multiplayer.Playmode" || 
+                        assemblyName == "Unity.Multiplayer.Playmode.Editor")
+                    {
+                        mppmAssembly = assembly;
+                        break;
+                    }
+                }
+
+                if (mppmAssembly != null)
+                {
+                    // Try to find CurrentPlayer class
+                    Type currentPlayerType = mppmAssembly.GetType("Unity.Multiplayer.Playmode.CurrentPlayer");
+                    if (currentPlayerType != null)
+                    {
+                        // Try IsMainEditor property
+                        PropertyInfo isMainEditorProperty = currentPlayerType.GetProperty(
+                            "IsMainEditor", 
+                            BindingFlags.Public | BindingFlags.Static);
+                        
+                        if (isMainEditorProperty != null)
+                        {
+                            bool isMainEditor = (bool)isMainEditorProperty.GetValue(null);
+                            _isMultiplayerPlayModeClone = !isMainEditor;
+                            return !isMainEditor;
+                        }
+                    }
+                }
+
+                // Method 4: Check if Unity's Library path indicates a VP (Virtual Player) subfolder
+                // Clone instances may use a modified library path
+                string libraryPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Library"));
+                if (IsVirtualPlayerLibraryPath(libraryPath))
+                {
+                    // Looks like we're in a virtual player's library folder
+                    _isMultiplayerPlayModeClone = true;
+                    return true;
+                }
+
+                // Default: not a clone (or couldn't detect MPPM)
+                _isMultiplayerPlayModeClone = false;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                // On any error, assume not a clone to avoid breaking functionality
+                Debug.LogWarning($"[MCP Unity] Error detecting Multiplayer Play Mode clone status: {ex.Message}");
+                _isMultiplayerPlayModeClone = false;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Returns true when the path contains a "Library" segment followed by a "VP" segment.
+        /// This avoids false positives from names like "MVP" or "CountyLibraryApp".
+        /// </summary>
+        private static bool IsVirtualPlayerLibraryPath(string libraryPath)
+        {
+            if (string.IsNullOrEmpty(libraryPath))
+            {
+                return false;
+            }
+
+            string normalizedPath = libraryPath.Replace('\\', '/');
+            string[] segments = normalizedPath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+
+            int libraryIndex = -1;
+            for (int i = 0; i < segments.Length; i++)
+            {
+                if (string.Equals(segments[i], "Library", StringComparison.OrdinalIgnoreCase))
+                {
+                    libraryIndex = i;
+                    break;
+                }
+            }
+
+            if (libraryIndex < 0)
+            {
+                return false;
+            }
+
+            for (int i = libraryIndex + 1; i < segments.Length; i++)
+            {
+                if (string.Equals(segments[i], "VP", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Resets the cached Multiplayer Play Mode clone detection result.
+        /// Useful for testing or when the state might have changed.
+        /// </summary>
+        public static void ResetMultiplayerPlayModeCloneCache()
+        {
+            _isMultiplayerPlayModeClone = null;
         }
     }
 }

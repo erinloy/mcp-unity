@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using McpUnity.DirectMcp.Services;
 using McpUnity.DirectMcp.Tools;
@@ -63,6 +65,16 @@ namespace McpUnity.DirectMcp
                 provider.GetRequiredService<UnityBridgeService>());
         }
 
+        /// <summary>
+        /// Names of the tools declared statically in <see cref="UnityTools"/>.
+        /// </summary>
+        private static readonly HashSet<string> StaticToolNames = typeof(UnityTools)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Select(method => method.GetCustomAttribute<McpServerToolAttribute>()?.Name)
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Select(name => name!)
+            .ToHashSet(StringComparer.Ordinal);
+
         private static void ConfigureMcpServer(HostApplicationBuilder builder)
         {
             builder.Services.AddMcpServer(options =>
@@ -92,9 +104,13 @@ namespace McpUnity.DirectMcp
                 logger.LogInformation("MCP tools/list request received");
                 
                 var toolService = context.Services!.GetRequiredService<IUnityToolService>();
-                var tools = await toolService.GetToolsAsync(ct);
+                // Tools with a static wrapper in UnityTools are listed by the SDK from the tool
+                // collection; drop Unity's dynamic entry for those names to avoid duplicates.
+                var tools = (await toolService.GetToolsAsync(ct))
+                    .Where(tool => !StaticToolNames.Contains(tool.Name))
+                    .ToList();
                 
-                logger.LogInformation("Returning {Count} tools to MCP client", tools.Count);
+                logger.LogInformation("Returning {Count} dynamic Unity tools to MCP client", tools.Count);
                 foreach (var tool in tools)
                 {
                     logger.LogDebug("Tool: {Name} - {Description}", tool.Name, tool.Description);
@@ -122,14 +138,15 @@ namespace McpUnity.DirectMcp
                     };
                 }
 
-                // Convert JsonElement dictionary to regular dictionary
+                // Pass the JsonElement values through unchanged so objects, arrays, numbers and
+                // booleans reach Unity with their JSON types intact (UnityToolService converts them).
                 Dictionary<string, object>? arguments = null;
                 if (request.Arguments != null)
                 {
                     arguments = new Dictionary<string, object>();
                     foreach (var kvp in request.Arguments)
                     {
-                        arguments[kvp.Key] = kvp.Value.ToString();
+                        arguments[kvp.Key] = kvp.Value;
                     }
                 }
                 return await toolService.CallToolAsync(request.Name, arguments, ct);

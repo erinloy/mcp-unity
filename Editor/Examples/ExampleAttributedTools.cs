@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using McpUnity.Tools.Attributes;
+using McpUnity.Utils;
 using Newtonsoft.Json.Linq;
 
 namespace McpUnity.Examples
@@ -104,7 +105,7 @@ namespace McpUnity.Examples
                 success = true,
                 gameObjectName = name,
                 position = new { x, y, z },
-                instanceId = go.GetInstanceID(),
+                instanceId = UnityObjectId.GetObjectId(go),
                 hasRenderer = addRenderer
             };
         }

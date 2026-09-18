@@ -13,7 +13,7 @@ public static string MyTool(string parameter)
 }
 ```
 
-2. **Restart the MCP server** or use "Tools > MCP Unity > Refresh Attributed Tools" menu item
+2. Run "Tools > MCP Unity > Refresh Attributed Tools" (attributed tools are not scanned at startup, which keeps domain reloads fast)
 
 3. **Your tool is now available** via MCP calls as `my_tool_name`
 
@@ -208,13 +208,13 @@ public static object AnalyzeScene()
 
 ## Tool Discovery and Registration
 
-### Automatic Discovery
-- Tools are automatically discovered when MCP Unity starts
+### Discovery
+- Attributed tools are registered when "Tools > MCP Unity > Refresh Attributed Tools" runs; they are not scanned at startup
 - Scans all loaded assemblies for methods with `[McpTool]` attribute
 - Built-in tools have priority over attributed tools with same names
 
 ### Manual Refresh
-Use the menu item "Tools > MCP Unity > Refresh Attributed Tools" to re-scan for attributed tools after:
+Run the menu item "Tools > MCP Unity > Refresh Attributed Tools" again to re-scan after:
 - Adding new attributed methods
 - Assembly domain reload
 - Code changes

@@ -22,6 +22,7 @@ namespace McpUnity.Unity
         private bool _isInitialized = false;
         private string _mcpConfigJson = "";
         private bool _tabsIndentationJson = false;
+        private bool _useRelativePathJson = false;
         private Vector2 _helpTabScrollPosition = Vector2.zero;
         private Vector2 _serverTabScrollPosition = Vector2.zero;
 
@@ -77,8 +78,9 @@ namespace McpUnity.Unity
             
             McpUnitySettings settings = McpUnitySettings.Instance;
             McpUnityServer mcpUnityServer = McpUnityServer.Instance;
-            string statusText = mcpUnityServer.IsListening ? "Server Online" : "Server Offline";
-            Color statusColor = mcpUnityServer.IsListening  ? Color.green : Color.red;
+            bool hasScheduledStart = mcpUnityServer.HasScheduledStart;
+            string statusText = hasScheduledStart ? mcpUnityServer.ScheduledStartStatus : (mcpUnityServer.IsListening ? "Server Online" : "Server Offline");
+            Color statusColor = hasScheduledStart ? Color.yellow : (mcpUnityServer.IsListening ? Color.green : Color.red);
             
             GUIStyle statusStyle = new GUIStyle(EditorStyles.boldLabel);
             statusStyle.normal.textColor = statusColor;
@@ -91,7 +93,7 @@ namespace McpUnity.Unity
             // Port configuration
             EditorGUILayout.BeginHorizontal();
             int newPort = EditorGUILayout.IntField("Connection Port", settings.Port);
-            if (newPort < 1 || newPort > 65536)
+            if (newPort < 1 || newPort > 65535)
             {
                 newPort = settings.Port;
                 Debug.LogError($"{newPort} is an invalid port number. Please enter a number between 1 and 65535.");
@@ -101,8 +103,7 @@ namespace McpUnity.Unity
             {
                 settings.Port = newPort;
                 settings.SaveSettings();
-                mcpUnityServer.StopServer();
-                mcpUnityServer.StartServer(); // Restart the server.newPort
+                mcpUnityServer.RestartServer();
             }
             EditorGUILayout.EndHorizontal();
             
@@ -135,6 +136,20 @@ namespace McpUnity.Unity
             }
             
             EditorGUILayout.Space();
+
+            // Batch mode bridge toggle
+            bool allowBatchModeServer = EditorGUILayout.Toggle(
+                new GUIContent(
+                    "Allow Batch Mode Server",
+                    "Allow the WebSocket server to run in Unity -batchmode. The C# MCP server build is skipped in batch mode. This is intended for persistent headless MCP hosts, not CI builds."),
+                settings.AllowBatchModeServer);
+            if (allowBatchModeServer != settings.AllowBatchModeServer)
+            {
+                settings.AllowBatchModeServer = allowBatchModeServer;
+                settings.SaveSettings();
+            }
+
+            EditorGUILayout.Space();
             
             // Allow remote connections toggle
             bool allowRemoteConnections = EditorGUILayout.Toggle(new GUIContent("Allow Remote Connections", "Allow connections from remote MCP bridges. When disabled, only localhost connections are allowed (default)."), settings.AllowRemoteConnections);
@@ -143,9 +158,89 @@ namespace McpUnity.Unity
                 settings.AllowRemoteConnections = allowRemoteConnections;
                 settings.SaveSettings();
                 // Restart server to apply binding change
-                mcpUnityServer.StopServer();
-                mcpUnityServer.StartServer();
+                mcpUnityServer.RestartServer();
             }
+
+            if (settings.AllowRemoteConnections)
+            {
+                EditorGUILayout.HelpBox(
+                    "Remote MCP connections use unencrypted ws:// transport. Authentication protects access but not confidentiality. Only use this on a trusted network, VPN, or SSH tunnel.",
+                    MessageType.Warning);
+            }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Security", EditorStyles.boldLabel);
+            EditorGUILayout.BeginVertical("box");
+
+            bool authenticationReady = McpUnityAuthentication.TryGetToken(out string authenticationToken, out string authenticationError);
+            EditorGUILayout.LabelField("Authentication", authenticationReady ? "Ready" : "Unavailable");
+            EditorGUILayout.LabelField("Token File");
+            EditorGUILayout.SelectableLabel(
+                McpUnityAuthentication.TokenPath.Replace("\\", "/"),
+                EditorStyles.textField,
+                GUILayout.Height(EditorGUIUtility.singleLineHeight));
+
+            if (!authenticationReady)
+            {
+                EditorGUILayout.HelpBox(authenticationError, MessageType.Error);
+            }
+
+            EditorGUILayout.BeginHorizontal();
+            GUI.enabled = authenticationReady;
+            if (GUILayout.Button("Copy Authentication Token"))
+            {
+                EditorGUIUtility.systemCopyBuffer = authenticationToken;
+            }
+
+            GUI.enabled = true;
+            if (GUILayout.Button("Regenerate Authentication Token")
+                && EditorUtility.DisplayDialog(
+                    "Regenerate Authentication Token?",
+                    "Existing MCP clients will be disconnected and cannot reconnect until they are restarted with the new token.",
+                    "Regenerate",
+                    "Cancel"))
+            {
+                try
+                {
+                    McpUnityAuthentication.RegenerateToken();
+                    mcpUnityServer.RestartServer();
+                    EditorUtility.DisplayDialog(
+                        "Authentication Token Regenerated",
+                        "Restart every MCP client process so it reloads the new token.",
+                        "OK");
+                }
+                catch (Exception ex)
+                {
+                    EditorUtility.DisplayDialog("Token Regeneration Failed", ex.Message, "OK");
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            bool allowPackageInstallation = EditorGUILayout.Toggle(
+                new GUIContent(
+                    "Allow Package Installation",
+                    "Allow add_package to install registry, Git, or disk packages. Installed packages can execute arbitrary Editor code."),
+                settings.AllowPackageInstallation);
+            if (allowPackageInstallation != settings.AllowPackageInstallation)
+            {
+                bool applyChange = !allowPackageInstallation || EditorUtility.DisplayDialog(
+                    "Enable Package Installation?",
+                    "Unity packages can execute arbitrary code in the Editor as soon as they compile. Only enable this capability for trusted MCP clients and package sources.",
+                    "Enable",
+                    "Cancel");
+                if (applyChange)
+                {
+                    settings.AllowPackageInstallation = allowPackageInstallation;
+                    settings.SaveSettings();
+                }
+            }
+
+            if (!settings.AllowPackageInstallation)
+            {
+                EditorGUILayout.HelpBox("The add_package tool is disabled by default.", MessageType.Info);
+            }
+
+            EditorGUILayout.EndVertical();
             
             EditorGUILayout.Space();
             
@@ -171,17 +266,23 @@ namespace McpUnity.Unity
             EditorGUILayout.BeginHorizontal();
             
             // Connect button - enabled only when disconnected
-            GUI.enabled = !mcpUnityServer.IsListening;
+            GUI.enabled = !mcpUnityServer.IsListening && !hasScheduledStart;
             if (GUILayout.Button("Start Server", GUILayout.Height(30)))
             {
                 mcpUnityServer.StartServer();
             }
             
             // Disconnect button - enabled only when connected
-            GUI.enabled = mcpUnityServer.IsListening;
+            GUI.enabled = mcpUnityServer.IsListening || hasScheduledStart;
             if (GUILayout.Button("Stop Server", GUILayout.Height(30)))
             {
                 mcpUnityServer.StopServer();
+            }
+
+            GUI.enabled = true;
+            if (GUILayout.Button("Restart Server", GUILayout.Height(30)))
+            {
+                mcpUnityServer.RestartServer();
             }
             
             //Repaint();
@@ -202,15 +303,22 @@ namespace McpUnity.Unity
                 {
                     EditorGUILayout.BeginVertical(_connectedClientBoxStyle); // Use green background for each client
                     
-                    EditorGUILayout.BeginHorizontal();
-                    EditorGUILayout.LabelField("ID:", _connectedClientLabelStyle, GUILayout.Width(50));                    
-                    EditorGUILayout.LabelField(client.Key, EditorStyles.boldLabel);
-                    EditorGUILayout.EndHorizontal();
+                    // Check if we have a meaningful client name (not empty and not the fallback)
+                    string clientName = client.Value;
+                    bool hasMeaningfulName = !string.IsNullOrEmpty(clientName) 
+                        && !clientName.Equals("Unknown MCP Client", StringComparison.OrdinalIgnoreCase);
                     
-                    EditorGUILayout.BeginHorizontal();
-                    EditorGUILayout.LabelField("Name:", _connectedClientLabelStyle, GUILayout.Width(50));
-                    EditorGUILayout.LabelField(client.Value, _connectedClientLabelStyle);
-                    EditorGUILayout.EndHorizontal();
+                    if (hasMeaningfulName)
+                    {
+                        // Show name prominently when available
+                        EditorGUILayout.LabelField(clientName, EditorStyles.boldLabel);
+                        EditorGUILayout.LabelField($"ID: {client.Key}", _connectedClientLabelStyle);
+                    }
+                    else
+                    {
+                        // Show just the ID when no meaningful name is available
+                        EditorGUILayout.LabelField($"Client: {client.Key}", EditorStyles.boldLabel);
+                    }
                     
                     EditorGUILayout.EndVertical();
                     EditorGUILayout.Space();
@@ -231,12 +339,19 @@ namespace McpUnity.Unity
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("MCP Configuration", EditorStyles.boldLabel);
 
-            var before = _tabsIndentationJson;
+            var beforeTabs = _tabsIndentationJson;
+            var beforeRelative = _useRelativePathJson;
             _tabsIndentationJson = EditorGUILayout.Toggle("Use Tabs indentation", _tabsIndentationJson);
-            
-            if (string.IsNullOrEmpty(_mcpConfigJson) || before != _tabsIndentationJson)
+            _useRelativePathJson = EditorGUILayout.Toggle(
+                new GUIContent(
+                    "Use relative path",
+                    "Emit a path relative to the Unity project root. Use this when pasting into workspace-scoped configs (e.g. .vscode/mcp.json) that are shared via git."),
+                _useRelativePathJson);
+
+            if (string.IsNullOrEmpty(_mcpConfigJson) || beforeTabs != _tabsIndentationJson || beforeRelative != _useRelativePathJson)
             {
-                _mcpConfigJson = McpUtils.GenerateMcpConfigJson(_tabsIndentationJson);
+                var pathMode = _useRelativePathJson ? PathMode.ProjectRelative : PathMode.Absolute;
+                _mcpConfigJson = McpUtils.GenerateMcpConfigJson(_tabsIndentationJson, pathMode);
             }
                 
             if (GUILayout.Button("Copy to Clipboard", GUILayout.Height(30)))
@@ -260,11 +375,38 @@ namespace McpUnity.Unity
 
             EditorGUILayout.Space();
 
+            ShowConfigButton("Cursor (Project)", McpUtils.AddToCursorProjectConfig);
+
+            EditorGUILayout.Space();
+
             ShowConfigButton("Claude Code", McpUtils.AddToClaudeCodeConfig);
 
             EditorGUILayout.Space();
 
+            ShowConfigButton("Claude Code (Project)", McpUtils.AddToClaudeCodeProjectConfig);
+
+            EditorGUILayout.Space();
+
             ShowConfigButton("GitHub Copilot", McpUtils.AddToGitHubCopilotConfig);
+
+            EditorGUILayout.Space();
+
+            ShowConfigButton("Codex CLI", McpUtils.AddToCodexCliConfig);
+
+            EditorGUILayout.Space();
+
+            ShowConfigButton(
+                "Codex CLI (Project)",
+                McpUtils.AddToCodexCliProjectConfig,
+                "Codex only loads this project config after you mark the project as trusted. The first time you run `codex` from this project's root, approve the trust prompt.");
+
+            EditorGUILayout.Space();
+
+            ShowConfigButton("Google Antigravity", McpUtils.AddToAntigravityConfig);
+
+            EditorGUILayout.Space();
+
+            ShowConfigButton("OpenCode", McpUtils.AddToOpenCodeConfig);
 
             EditorGUILayout.Separator();
             EditorGUILayout.Separator();
@@ -399,6 +541,14 @@ namespace McpUnity.Unity
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField("Example prompt:", EditorStyles.miniLabel);
             WrappedLabel("Add the Player prefab from my project to the current scene", new GUIStyle(EditorStyles.miniLabel) { fontStyle = FontStyle.Italic });
+            EditorGUILayout.EndVertical();
+            
+            // recompile_scripts
+            WrappedLabel("recompile_scripts", EditorStyles.boldLabel);
+            WrappedLabel("Recompiles all scripts in the Unity project");
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("Example prompt:", EditorStyles.miniLabel);
+            WrappedLabel("Recompile scripts in my project", new GUIStyle(EditorStyles.miniLabel) { fontStyle = FontStyle.Italic });
             EditorGUILayout.EndVertical();
             
             EditorGUILayout.EndVertical();
@@ -598,19 +748,34 @@ namespace McpUnity.Unity
         
             
         // Helper to show a config button with unified logic
-        private void ShowConfigButton(string configLabel, Func<bool, bool> configAction)
+        private void ShowConfigButton(string configLabel, Func<bool, bool> configAction, string successFollowUp = null)
         {
-            if (GUILayout.Button($"Configure {configLabel}", GUILayout.Height(30)))
+            bool isSupported = McpUtils.IsAutoConfigSupported(configLabel);
+
+            using (new EditorGUI.DisabledScope(!isSupported))
             {
-                bool added = configAction(_tabsIndentationJson);
-                if (added)
+                if (GUILayout.Button($"Configure {configLabel}", GUILayout.Height(30)))
                 {
-                    EditorUtility.DisplayDialog("Success", $"The MCP configuration was successfully added to the {configLabel} config file.", "OK");
+                    bool added = configAction(_tabsIndentationJson);
+                    if (added)
+                    {
+                        string message = $"The MCP configuration was successfully added to the {configLabel} config file.";
+                        if (!string.IsNullOrEmpty(successFollowUp))
+                        {
+                            message += "\n\n" + successFollowUp;
+                        }
+                        EditorUtility.DisplayDialog("Success", message, "OK");
+                    }
+                    else
+                    {
+                        EditorUtility.DisplayDialog("Error", $"The MCP configuration could not be added to the {configLabel} config file.", "OK");
+                    }
                 }
-                else
-                {
-                    EditorUtility.DisplayDialog("Error", $"The MCP configuration could not be added to the {configLabel} config file.", "OK");
-                }
+            }
+
+            if (!isSupported)
+            {
+                WrappedLabel(McpUtils.GetAutoConfigUnsupportedReason(configLabel), EditorStyles.miniLabel);
             }
         }
 

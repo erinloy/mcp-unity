@@ -64,7 +64,7 @@ namespace McpUnity.Tools
 
             if (instanceId.HasValue)
             {
-                target = EditorUtility.InstanceIDToObject(instanceId.Value) as GameObject;
+                target = UnityObjectId.ObjectFromId(instanceId.Value) as GameObject;
             }
             else if (!string.IsNullOrEmpty(path))
             {
@@ -89,7 +89,7 @@ namespace McpUnity.Tools
                     {
                         ["name"] = child.name,
                         ["path"] = GetGameObjectPath(child.gameObject),
-                        ["instanceId"] = child.gameObject.GetInstanceID(),
+                        ["instanceId"] = UnityObjectId.GetObjectId(child.gameObject),
                         ["active"] = child.gameObject.activeSelf,
                         ["componentCount"] = child.GetComponents<Component>().Length
                     });
@@ -121,7 +121,7 @@ namespace McpUnity.Tools
             {
                 ["name"] = go.name,
                 ["path"] = GetGameObjectPath(go),
-                ["instanceId"] = go.GetInstanceID(),
+                ["instanceId"] = UnityObjectId.GetObjectId(go),
                 ["active"] = go.activeSelf,
                 ["activeInHierarchy"] = go.activeInHierarchy,
                 ["tag"] = go.tag,
@@ -140,7 +140,7 @@ namespace McpUnity.Tools
                 {
                     ["type"] = comp.GetType().Name,
                     ["fullType"] = comp.GetType().FullName,
-                    ["instanceId"] = comp.GetInstanceID()
+                    ["instanceId"] = UnityObjectId.GetObjectId(comp)
                 };
 
                 // Get serialized fields

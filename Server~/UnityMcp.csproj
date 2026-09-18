@@ -25,10 +25,15 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.0-preview.7.25380.108" />
   </ItemGroup>
 
+  <!-- Location of the MCP C# SDK fork checkout. Override with -p:McpCSharpSdkRoot=<path> -->
+  <PropertyGroup>
+    <McpCSharpSdkRoot Condition="'$(McpCSharpSdkRoot)' == ''">$(MSBuildThisFileDirectory)../../../../../../external/mcp-csharp-sdk</McpCSharpSdkRoot>
+  </PropertyGroup>
+
   <!-- Reference the MCP SDK fork projects -->
   <ItemGroup>
-    <ProjectReference Include="../../../../../../external/mcp-csharp-sdk/src/ModelContextProtocol.Core/ModelContextProtocol.Core.csproj" />
-    <ProjectReference Include="../../../../../../external/mcp-csharp-sdk/src/ModelContextProtocol/ModelContextProtocol.csproj" />
+    <ProjectReference Include="$(McpCSharpSdkRoot)/src/ModelContextProtocol.Core/ModelContextProtocol.Core.csproj" />
+    <ProjectReference Include="$(McpCSharpSdkRoot)/src/ModelContextProtocol/ModelContextProtocol.csproj" />
   </ItemGroup>
 
   <ItemGroup>

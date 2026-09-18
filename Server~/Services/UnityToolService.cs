@@ -185,16 +185,36 @@ namespace McpUnity.DirectMcp.Services
                     {
                         content.Add(new ImageContentBlock
                         {
-                            Data = item["data"]?.ToString() ?? "",
+                            // Unity sends base64 text; the SDK stores it as base64-encoded UTF-8 bytes
+                            Data = System.Text.Encoding.UTF8.GetBytes(item["data"]?.ToString() ?? ""),
                             MimeType = item["mimeType"]?.ToString() ?? "image/png"
+                        });
+                    }
+                    else
+                    {
+                        // Unknown block type: surface it verbatim instead of dropping it
+                        content.Add(new TextContentBlock
+                        {
+                            Text = item.ToString(Newtonsoft.Json.Formatting.Indented)
                         });
                     }
                 }
             }
+            else
+            {
+                // Most Unity tools return a structured result ({ success, message, ... }) rather than
+                // MCP content blocks. Return it as JSON text so the client receives the full result.
+                content.Add(new TextContentBlock
+                {
+                    Text = result.ToString(Newtonsoft.Json.Formatting.Indented)
+                });
+            }
 
             return new CallToolResult
             {
-                IsError = result["isError"]?.Value<bool>() ?? false,
+                // Explicit isError wins; otherwise a structured result reporting success=false is an error
+                IsError = result["isError"]?.Value<bool>()
+                          ?? (result["success"]?.Type == JTokenType.Boolean && !result["success"]!.Value<bool>()),
                 Content = content
             };
         }

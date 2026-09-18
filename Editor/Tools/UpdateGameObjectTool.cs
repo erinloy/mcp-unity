@@ -45,8 +45,8 @@ namespace McpUnity.Tools
                             ["name"] = new JObject { ["type"] = "string" },
                             ["tag"] = new JObject { ["type"] = "string" },
                             ["layer"] = new JObject { ["type"] = "integer" },
-                            ["active"] = new JObject { ["type"] = "boolean" },
-                            ["static"] = new JObject { ["type"] = "boolean" }
+                            ["activeSelf"] = new JObject { ["type"] = "boolean" },
+                            ["isStatic"] = new JObject { ["type"] = "boolean" }
                         }
                     }
                 },
@@ -69,8 +69,8 @@ namespace McpUnity.Tools
             string newName = gameObjectData? ["name"]?.ToObject<string>();
             string newTag = gameObjectData? ["tag"]?.ToObject<string>();
             int? newLayer = gameObjectData? ["layer"]?.ToObject<int?>();
-            bool? newIsActiveSelf = gameObjectData? ["isActiveSelf"]?.ToObject<bool?>();
-            bool? newIsStatic = gameObjectData? ["isStatic"]?.ToObject<bool?>();
+            bool? newIsActiveSelf = (gameObjectData?["activeSelf"] ?? gameObjectData?["isActiveSelf"])?.ToObject<bool?>();
+            bool? newIsStatic = (gameObjectData?["isStatic"] ?? gameObjectData?["static"])?.ToObject<bool?>();
 
             GameObject targetGameObject = null;
             string identifierInfo = "";
@@ -78,7 +78,7 @@ namespace McpUnity.Tools
             // Identify or create the GameObject by instanceId or objectPath
             if (instanceId.HasValue)
             {
-                targetGameObject = EditorUtility.InstanceIDToObject(instanceId.Value) as GameObject;
+                targetGameObject = UnityObjectId.ObjectFromId(instanceId.Value) as GameObject;
                 identifierInfo = $"instance ID {instanceId.Value}";
             }
             else if (!string.IsNullOrEmpty(objectPath))
@@ -168,7 +168,7 @@ namespace McpUnity.Tools
                 ["message"] = propertiesUpdated
                     ? $"GameObject '{targetGameObject.name}' (identified by {identifierInfo}) updated successfully."
                     : $"No properties were changed for GameObject '{targetGameObject.name}' (identified by {identifierInfo}).",
-                ["instanceId"] = targetGameObject.GetInstanceID(),
+                ["instanceId"] = UnityObjectId.GetObjectId(targetGameObject),
                 ["name"] = targetGameObject.name,
                 ["path"] = GetGameObjectPath(targetGameObject)
             };

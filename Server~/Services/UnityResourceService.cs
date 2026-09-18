@@ -175,7 +175,8 @@ namespace McpUnity.DirectMcp.Services
                             Uri = itemUri,
                             // MimeType must not be null - default to application/octet-stream for binary
                             MimeType = mimeType ?? "application/octet-stream",
-                            Blob = item["blob"]?.ToString() ?? ""
+                            // Unity sends base64 text; the SDK stores it as base64-encoded UTF-8 bytes
+                            Blob = System.Text.Encoding.UTF8.GetBytes(item["blob"]?.ToString() ?? "")
                         });
                     }
                 }

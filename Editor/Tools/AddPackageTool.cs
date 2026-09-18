@@ -1,13 +1,11 @@
 using System;
-using System.Linq;
 using System.Collections.Generic;
-using UnityEngine;
 using UnityEditor;
+using UnityEngine;
 using UnityEditor.PackageManager;
 using UnityEditor.PackageManager.Requests;
 using Newtonsoft.Json.Linq;
 using System.Threading.Tasks;
-using McpUnity.Tools;
 using McpUnity.Unity;
 using McpUnity.Utils;
 
@@ -45,6 +43,18 @@ namespace McpUnity.Tools
         /// <param name="tcs">TaskCompletionSource to set the result or exception</param>
         public override void ExecuteAsync(JObject parameters, TaskCompletionSource<JObject> tcs)
         {
+            if (!IsPackageInstallationAllowed(Application.isBatchMode, McpUnitySettings.Instance.AllowPackageInstallation))
+            {
+                string message = Application.isBatchMode
+                    ? "Package installation is disabled while Unity is running in batch mode."
+                    : "Package installation is disabled. Enable 'Allow Package Installation' in Tools > MCP Unity > Server Window or set AllowPackageInstallation to true in ProjectSettings/McpUnitySettings.json.";
+                tcs.SetResult(McpUnitySocketHandler.CreateErrorResponse(
+                    message,
+                    "package_installation_disabled"
+                ));
+                return;
+            }
+
             // Extract source parameter
             string source = parameters["source"]?.ToObject<string>();
             if (string.IsNullOrEmpty(source))
@@ -98,6 +108,11 @@ namespace McpUnity.Tools
                     _updateCallbackRegistered = true;
                 }
             }
+        }
+
+        private static bool IsPackageInstallationAllowed(bool isBatchMode, bool allowPackageInstallation)
+        {
+            return !isBatchMode && allowPackageInstallation;
         }
         
         /// <summary>
@@ -223,8 +238,9 @@ namespace McpUnity.Tools
                 return null;
             }
             
-            // Format as file URL
-            string packageUrl = $"file:{path}";
+            // Format as file URL with proper encoding for paths containing spaces
+            string encodedPath = McpUtils.EncodePathForFileUrl(path);
+            string packageUrl = $"file:{encodedPath}";
             
             McpLogger.LogInfo($"Adding package from disk: {packageUrl}");
             

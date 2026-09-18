@@ -101,7 +101,7 @@ namespace McpUnity.Tools
             GameObject parent = null;
             if (parentInstanceId.HasValue)
             {
-                parent = EditorUtility.InstanceIDToObject(parentInstanceId.Value) as GameObject;
+                parent = UnityObjectId.ObjectFromId(parentInstanceId.Value) as GameObject;
             }
             else
             {
@@ -193,7 +193,7 @@ namespace McpUnity.Tools
                     ["type"] = "text",
                     ["message"] = $"Created {elementType}: {name}",
                     ["path"] = path,
-                    ["instanceId"] = createdElement.GetInstanceID()
+                    ["instanceId"] = UnityObjectId.GetObjectId(createdElement)
                 };
             }
             catch (Exception ex)

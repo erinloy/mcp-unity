@@ -54,7 +54,7 @@ namespace McpUnity.Tools
             
             if (instanceId.HasValue)
             {
-                gameObject = EditorUtility.InstanceIDToObject(instanceId.Value) as GameObject;
+                gameObject = UnityObjectId.ObjectFromId(instanceId.Value) as GameObject;
                 identifier = $"ID {instanceId.Value}";
             }
             else
@@ -238,13 +238,50 @@ namespace McpUnity.Tools
             
             return null;
         }
-        
+
+        private FieldInfo GetFieldRecursive(Type type, string fieldName)
+        {
+            while (type != null && type != typeof(object))
+            {
+                FieldInfo field = type.GetField(fieldName,
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+                if (field != null)
+                {
+                    return field;
+                }
+
+                type = type.BaseType;
+            }
+
+            return null;
+        }
+
+        private PropertyInfo GetPropertyRecursive(Type type, string propertyName)
+        {
+            while (type != null && type != typeof(object))
+            {
+                PropertyInfo prop = type.GetProperty(propertyName,
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+                if (prop != null)
+                {
+                    return prop;
+                }
+
+                type = type.BaseType;
+            }
+
+            return null;
+        }
+
         /// <summary>
         /// Update component data based on the provided JObject
+        /// Uses SerializedObject API as primary method (handles base class fields and nested paths),
+        /// with reflection as fallback for non-serialized properties.
         /// </summary>
         /// <param name="component">The component to update</param>
         /// <param name="componentData">The data to apply to the component</param>
-        /// <returns>True if the component was updated successfully</returns>
+        /// <param name="errorMessage">Error message if any fields failed to update</param>
+        /// <returns>True if all fields were updated successfully</returns>
         private bool UpdateComponentData(Component component, JObject componentData, out string errorMessage)
         {
             errorMessage = "";
@@ -260,46 +297,177 @@ namespace McpUnity.Tools
 
             // Record object for undo
             Undo.RecordObject(component, $"Update {componentType.Name} fields");
-            
-            // Process each field or property in the component data
+
+            SerializedObject serializedObject = new SerializedObject(component);
+
             foreach (var property in componentData.Properties())
             {
                 string fieldName = property.Name;
                 JToken fieldValue = property.Value;
-                
-                // Skip null values
-                if (string.IsNullOrEmpty(fieldName) || fieldValue.Type == JTokenType.Null)
+
+                if (string.IsNullOrEmpty(fieldName))
                 {
                     continue;
                 }
-                
-                // Try to update field
-                FieldInfo fieldInfo = componentType.GetField(fieldName, 
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    
+
+                SerializedProperty serializedProperty = serializedObject.FindProperty(fieldName);
+                if (serializedProperty != null)
+                {
+                    if (!TrySetSerializedPropertyValue(serializedProperty, fieldValue, out string setError))
+                    {
+                        fullSuccess = false;
+                        errorMessage = setError;
+                        McpLogger.LogWarning($"[MCP Unity] {errorMessage}");
+                        break;
+                    }
+
+                    continue;
+                }
+
+                FieldInfo fieldInfo = GetFieldRecursive(componentType, fieldName);
                 if (fieldInfo != null)
                 {
-                    object value = ConvertJTokenToValue(fieldValue, fieldInfo.FieldType);
+                    if (!TryConvertJTokenToValue(fieldValue, fieldInfo.FieldType, out object value, out string convertError))
+                    {
+                        fullSuccess = false;
+                        errorMessage = $"Could not convert field '{fieldName}' on component '{componentType.Name}': {convertError}";
+                        McpLogger.LogWarning($"[MCP Unity] {errorMessage}");
+                        break;
+                    }
+
                     fieldInfo.SetValue(component, value);
                     continue;
                 }
-                
-                // Try to update property if not found as a field
-                PropertyInfo propertyInfo = componentType.GetProperty(fieldName, 
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                
+
+                PropertyInfo propertyInfo = GetPropertyRecursive(componentType, fieldName);
                 if (propertyInfo != null)
                 {
-                    object value = ConvertJTokenToValue(fieldValue, propertyInfo.PropertyType);
+                    if (!propertyInfo.CanWrite)
+                    {
+                        fullSuccess = false;
+                        errorMessage = $"Property '{fieldName}' on component '{componentType.Name}' is read-only";
+                        McpLogger.LogWarning($"[MCP Unity] {errorMessage}");
+                        break;
+                    }
+
+                    if (!TryConvertJTokenToValue(fieldValue, propertyInfo.PropertyType, out object value, out string convertError))
+                    {
+                        fullSuccess = false;
+                        errorMessage = $"Could not convert property '{fieldName}' on component '{componentType.Name}': {convertError}";
+                        McpLogger.LogWarning($"[MCP Unity] {errorMessage}");
+                        break;
+                    }
+
                     propertyInfo.SetValue(component, value);
                     continue;
                 }
-                
+
                 fullSuccess = false;
-                errorMessage = $"Field or Property  with name '{fieldName}' not found on component '{componentType.Name}'";
+                errorMessage = $"Field or Property with name '{fieldName}' not found on component '{componentType.Name}'";
+                McpLogger.LogWarning($"[MCP Unity] {errorMessage}");
+                break;
+            }
+
+            if (fullSuccess)
+            {
+                serializedObject.ApplyModifiedProperties();
             }
 
             return fullSuccess;
+        }
+
+        private bool TrySetSerializedPropertyValue(SerializedProperty prop, JToken value, out string errorMessage)
+        {
+            errorMessage = "";
+
+            try
+            {
+                switch (prop.propertyType)
+                {
+                    case SerializedPropertyType.Integer:
+                        prop.intValue = value.ToObject<int>();
+                        return true;
+                    case SerializedPropertyType.Boolean:
+                        prop.boolValue = value.ToObject<bool>();
+                        return true;
+                    case SerializedPropertyType.Float:
+                        prop.floatValue = value.ToObject<float>();
+                        return true;
+                    case SerializedPropertyType.String:
+                        prop.stringValue = value.Type == JTokenType.Null ? null : value.ToObject<string>();
+                        return true;
+                    case SerializedPropertyType.Color:
+                        if (!TryReadColor(value, out Color color, out errorMessage)) return false;
+                        prop.colorValue = color;
+                        return true;
+                    case SerializedPropertyType.Vector2:
+                        if (!TryReadVector2(value, out Vector2 vector2, out errorMessage)) return false;
+                        prop.vector2Value = vector2;
+                        return true;
+                    case SerializedPropertyType.Vector3:
+                        if (!TryReadVector3(value, out Vector3 vector3, out errorMessage)) return false;
+                        prop.vector3Value = vector3;
+                        return true;
+                    case SerializedPropertyType.Vector4:
+                        if (!TryReadVector4(value, out Vector4 vector4, out errorMessage)) return false;
+                        prop.vector4Value = vector4;
+                        return true;
+                    case SerializedPropertyType.Quaternion:
+                        if (!TryReadQuaternion(value, out Quaternion quaternion, out errorMessage)) return false;
+                        prop.quaternionValue = quaternion;
+                        return true;
+                    case SerializedPropertyType.Rect:
+                        if (!TryReadRect(value, out Rect rect, out errorMessage)) return false;
+                        prop.rectValue = rect;
+                        return true;
+                    case SerializedPropertyType.Bounds:
+                        if (!TryReadBounds(value, out Bounds bounds, out errorMessage)) return false;
+                        prop.boundsValue = bounds;
+                        return true;
+                    case SerializedPropertyType.Enum:
+                        return TrySetEnumProperty(prop, value, out errorMessage);
+                    case SerializedPropertyType.ObjectReference:
+                        if (!TryLoadObjectReference(value, typeof(UnityEngine.Object), out UnityEngine.Object asset, out errorMessage))
+                        {
+                            return false;
+                        }
+
+                        prop.objectReferenceValue = asset;
+                        return true;
+                    case SerializedPropertyType.LayerMask:
+                        prop.intValue = value.ToObject<int>();
+                        return true;
+                    case SerializedPropertyType.Vector2Int:
+                        if (!TryReadVector2Int(value, out Vector2Int vector2Int, out errorMessage)) return false;
+                        prop.vector2IntValue = vector2Int;
+                        return true;
+                    case SerializedPropertyType.Vector3Int:
+                        if (!TryReadVector3Int(value, out Vector3Int vector3Int, out errorMessage)) return false;
+                        prop.vector3IntValue = vector3Int;
+                        return true;
+                    case SerializedPropertyType.RectInt:
+                        if (!TryReadRectInt(value, out RectInt rectInt, out errorMessage)) return false;
+                        prop.rectIntValue = rectInt;
+                        return true;
+                    case SerializedPropertyType.BoundsInt:
+                        if (!TryReadBoundsInt(value, out BoundsInt boundsInt, out errorMessage)) return false;
+                        prop.boundsIntValue = boundsInt;
+                        return true;
+                    case SerializedPropertyType.Generic:
+                        return TrySetGenericProperty(prop, value, out errorMessage);
+                    case SerializedPropertyType.ArraySize:
+                        prop.intValue = value.ToObject<int>();
+                        return true;
+                    default:
+                        errorMessage = $"Unsupported property type '{prop.propertyType}' for '{prop.propertyPath}'";
+                        return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                errorMessage = $"Could not set '{prop.propertyPath}' ({prop.propertyType}): {ex.Message}";
+                return false;
+            }
         }
 
         /// <summary>
@@ -308,126 +476,383 @@ namespace McpUnity.Tools
         /// <param name="token">The JToken to convert</param>
         /// <param name="targetType">The target type to convert to</param>
         /// <returns>The converted value</returns>
-        private object ConvertJTokenToValue(JToken token, Type targetType)
+        private bool TryConvertJTokenToValue(JToken token, Type targetType, out object value, out string errorMessage)
         {
-            if (token == null)
+            value = null;
+            errorMessage = "";
+
+            if (token == null || token.Type == JTokenType.Null)
             {
-                return null;
+                if (targetType.IsValueType && Nullable.GetUnderlyingType(targetType) == null)
+                {
+                    errorMessage = $"Cannot assign null to value type '{targetType.Name}'";
+                    return false;
+                }
+
+                return true;
             }
-            
+
             // Handle Unity Vector types
             if (targetType == typeof(Vector2) && token.Type == JTokenType.Object)
             {
-                JObject vector = (JObject)token;
-                return new Vector2(
-                    vector["x"]?.ToObject<float>() ?? 0f,
-                    vector["y"]?.ToObject<float>() ?? 0f
-                );
+                bool success = TryReadVector2(token, out Vector2 vector, out errorMessage);
+                value = vector;
+                return success;
             }
-            
+
             if (targetType == typeof(Vector3) && token.Type == JTokenType.Object)
             {
-                JObject vector = (JObject)token;
-                return new Vector3(
-                    vector["x"]?.ToObject<float>() ?? 0f,
-                    vector["y"]?.ToObject<float>() ?? 0f,
-                    vector["z"]?.ToObject<float>() ?? 0f
-                );
+                bool success = TryReadVector3(token, out Vector3 vector, out errorMessage);
+                value = vector;
+                return success;
             }
-            
+
             if (targetType == typeof(Vector4) && token.Type == JTokenType.Object)
             {
-                JObject vector = (JObject)token;
-                return new Vector4(
-                    vector["x"]?.ToObject<float>() ?? 0f,
-                    vector["y"]?.ToObject<float>() ?? 0f,
-                    vector["z"]?.ToObject<float>() ?? 0f,
-                    vector["w"]?.ToObject<float>() ?? 0f
-                );
+                bool success = TryReadVector4(token, out Vector4 vector, out errorMessage);
+                value = vector;
+                return success;
             }
-            
+
             if (targetType == typeof(Quaternion) && token.Type == JTokenType.Object)
             {
-                JObject quaternion = (JObject)token;
-                return new Quaternion(
-                    quaternion["x"]?.ToObject<float>() ?? 0f,
-                    quaternion["y"]?.ToObject<float>() ?? 0f,
-                    quaternion["z"]?.ToObject<float>() ?? 0f,
-                    quaternion["w"]?.ToObject<float>() ?? 1f
-                );
+                bool success = TryReadQuaternion(token, out Quaternion quaternion, out errorMessage);
+                value = quaternion;
+                return success;
             }
-            
+
             if (targetType == typeof(Color) && token.Type == JTokenType.Object)
             {
-                JObject color = (JObject)token;
-                return new Color(
-                    color["r"]?.ToObject<float>() ?? 0f,
-                    color["g"]?.ToObject<float>() ?? 0f,
-                    color["b"]?.ToObject<float>() ?? 0f,
-                    color["a"]?.ToObject<float>() ?? 1f
-                );
+                bool success = TryReadColor(token, out Color color, out errorMessage);
+                value = color;
+                return success;
             }
-            
+
             if (targetType == typeof(Bounds) && token.Type == JTokenType.Object)
             {
-                JObject bounds = (JObject)token;
-                Vector3 center = bounds["center"]?.ToObject<Vector3>() ?? Vector3.zero;
-                Vector3 size = bounds["size"]?.ToObject<Vector3>() ?? Vector3.one;
-                return new Bounds(center, size);
+                bool success = TryReadBounds(token, out Bounds bounds, out errorMessage);
+                value = bounds;
+                return success;
             }
-            
+
             if (targetType == typeof(Rect) && token.Type == JTokenType.Object)
             {
-                JObject rect = (JObject)token;
-                return new Rect(
-                    rect["x"]?.ToObject<float>() ?? 0f,
-                    rect["y"]?.ToObject<float>() ?? 0f,
-                    rect["width"]?.ToObject<float>() ?? 0f,
-                    rect["height"]?.ToObject<float>() ?? 0f
-                );
+                bool success = TryReadRect(token, out Rect rect, out errorMessage);
+                value = rect;
+                return success;
             }
-            
-            // Handle UnityEngine.Object types;
-            if (targetType == typeof(UnityEngine.Object))
+
+            // Handle UnityEngine.Object types (assets) by path or GUID
+            if (typeof(UnityEngine.Object).IsAssignableFrom(targetType))
             {
-                return token.ToObject<UnityEngine.Object>();
+                bool success = TryLoadObjectReference(token, targetType, out UnityEngine.Object asset, out errorMessage);
+                value = asset;
+                return success;
             }
-            
+
             // Handle enum types
             if (targetType.IsEnum)
             {
-                // If JToken is a string, try to parse as enum name
                 if (token.Type == JTokenType.String)
                 {
                     string enumName = token.ToObject<string>();
                     if (Enum.TryParse(targetType, enumName, true, out object result))
                     {
-                        return result;
+                        value = result;
+                        return true;
                     }
-                    
-                    // If parsing fails, try to convert numeric value
+
                     if (int.TryParse(enumName, out int enumValue))
                     {
-                        return Enum.ToObject(targetType, enumValue);
+                        value = Enum.ToObject(targetType, enumValue);
+                        return true;
                     }
+
+                    errorMessage = $"'{enumName}' is not a valid value for enum '{targetType.Name}'";
+                    return false;
                 }
-                // If JToken is a number, convert directly to enum
-                else if (token.Type == JTokenType.Integer)
+
+                if (token.Type == JTokenType.Integer)
                 {
-                    return Enum.ToObject(targetType, token.ToObject<int>());
+                    value = Enum.ToObject(targetType, token.ToObject<int>());
+                    return true;
                 }
+
+                errorMessage = $"Expected string or integer for enum '{targetType.Name}'";
+                return false;
             }
-            
-            // For other types, use JToken's ToObject method
+
             try
             {
-                return token.ToObject(targetType);
+                value = token.ToObject(targetType);
+                return true;
             }
             catch (Exception ex)
             {
-                McpLogger.LogError($"[MCP Unity] Error converting value to type {targetType.Name}: {ex.Message}");
-                return null;
+                errorMessage = $"Error converting value to type {targetType.Name}: {ex.Message}";
+                return false;
             }
+        }
+
+        private bool TrySetGenericProperty(SerializedProperty prop, JToken value, out string errorMessage)
+        {
+            errorMessage = "";
+
+            if (value.Type != JTokenType.Object)
+            {
+                errorMessage = $"Expected object value for '{prop.propertyPath}'";
+                return false;
+            }
+
+            foreach (var child in ((JObject)value).Properties())
+            {
+                SerializedProperty childProp = prop.FindPropertyRelative(child.Name);
+                if (childProp == null)
+                {
+                    errorMessage = $"Nested property '{child.Name}' not found under '{prop.propertyPath}'";
+                    return false;
+                }
+
+                if (!TrySetSerializedPropertyValue(childProp, child.Value, out errorMessage))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool TrySetEnumProperty(SerializedProperty prop, JToken value, out string errorMessage)
+        {
+            errorMessage = "";
+
+            if (value.Type == JTokenType.String)
+            {
+                string enumValue = value.ToObject<string>();
+                string[] enumNames = prop.enumNames;
+
+                for (int i = 0; i < enumNames.Length; i++)
+                {
+                    if (string.Equals(enumNames[i], enumValue, StringComparison.OrdinalIgnoreCase))
+                    {
+                        prop.enumValueIndex = i;
+                        return true;
+                    }
+                }
+
+                errorMessage = $"'{enumValue}' is not a valid value for '{prop.propertyPath}'";
+                return false;
+            }
+
+            if (value.Type == JTokenType.Integer)
+            {
+                int index = value.ToObject<int>();
+                if (index < 0 || index >= prop.enumNames.Length)
+                {
+                    errorMessage = $"Enum index {index} is out of range for '{prop.propertyPath}'";
+                    return false;
+                }
+
+                prop.enumValueIndex = index;
+                return true;
+            }
+
+            errorMessage = $"Expected string or integer enum value for '{prop.propertyPath}'";
+            return false;
+        }
+
+        private bool TryLoadObjectReference(JToken token, Type targetType, out UnityEngine.Object asset, out string errorMessage)
+        {
+            asset = null;
+            errorMessage = "";
+
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                return true;
+            }
+
+            string assetPath = null;
+
+            if (token.Type == JTokenType.String)
+            {
+                string input = token.ToObject<string>();
+                if (string.IsNullOrEmpty(input))
+                {
+                    return true;
+                }
+
+                if (input.StartsWith("Assets/") || input.StartsWith("Packages/"))
+                {
+                    assetPath = input;
+                }
+                else
+                {
+                    string[] guids = AssetDatabase.FindAssets($"{input} t:{targetType.Name}");
+                    if (guids.Length == 0)
+                    {
+                        guids = AssetDatabase.FindAssets(input);
+                    }
+
+                    if (guids.Length > 0)
+                    {
+                        assetPath = AssetDatabase.GUIDToAssetPath(guids[0]);
+                    }
+                }
+            }
+            else if (token.Type == JTokenType.Object)
+            {
+                JObject obj = (JObject)token;
+                string guid = obj["guid"]?.ToObject<string>();
+                string path = obj["path"]?.ToObject<string>();
+
+                if (!string.IsNullOrEmpty(guid))
+                {
+                    assetPath = AssetDatabase.GUIDToAssetPath(guid);
+                    if (string.IsNullOrEmpty(assetPath))
+                    {
+                        errorMessage = $"Could not find asset with GUID '{guid}'";
+                        return false;
+                    }
+                }
+                else
+                {
+                    assetPath = path;
+                }
+            }
+            else
+            {
+                errorMessage = "Object references must be null, an asset path, an asset name, or an object with guid/path";
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(assetPath))
+            {
+                errorMessage = $"Could not find asset '{token}'";
+                return false;
+            }
+
+            asset = AssetDatabase.LoadAssetAtPath(assetPath, targetType);
+            if (asset == null)
+            {
+                errorMessage = $"Could not find asset at path '{assetPath}'";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryReadObject(JToken value, string expectedType, out JObject obj, out string errorMessage)
+        {
+            obj = value as JObject;
+            errorMessage = "";
+
+            if (obj != null)
+            {
+                return true;
+            }
+
+            errorMessage = $"Expected object value for {expectedType}";
+            return false;
+        }
+
+        private static bool TryReadVector2(JToken value, out Vector2 vector, out string errorMessage)
+        {
+            vector = Vector2.zero;
+            if (!TryReadObject(value, "Vector2", out JObject obj, out errorMessage)) return false;
+            vector = new Vector2(obj["x"]?.ToObject<float>() ?? 0f, obj["y"]?.ToObject<float>() ?? 0f);
+            return true;
+        }
+
+        private static bool TryReadVector3(JToken value, out Vector3 vector, out string errorMessage)
+        {
+            vector = Vector3.zero;
+            if (!TryReadObject(value, "Vector3", out JObject obj, out errorMessage)) return false;
+            vector = new Vector3(obj["x"]?.ToObject<float>() ?? 0f, obj["y"]?.ToObject<float>() ?? 0f, obj["z"]?.ToObject<float>() ?? 0f);
+            return true;
+        }
+
+        private static bool TryReadVector4(JToken value, out Vector4 vector, out string errorMessage)
+        {
+            vector = Vector4.zero;
+            if (!TryReadObject(value, "Vector4", out JObject obj, out errorMessage)) return false;
+            vector = new Vector4(obj["x"]?.ToObject<float>() ?? 0f, obj["y"]?.ToObject<float>() ?? 0f, obj["z"]?.ToObject<float>() ?? 0f, obj["w"]?.ToObject<float>() ?? 0f);
+            return true;
+        }
+
+        private static bool TryReadQuaternion(JToken value, out Quaternion quaternion, out string errorMessage)
+        {
+            quaternion = Quaternion.identity;
+            if (!TryReadObject(value, "Quaternion", out JObject obj, out errorMessage)) return false;
+            quaternion = new Quaternion(obj["x"]?.ToObject<float>() ?? 0f, obj["y"]?.ToObject<float>() ?? 0f, obj["z"]?.ToObject<float>() ?? 0f, obj["w"]?.ToObject<float>() ?? 1f);
+            return true;
+        }
+
+        private static bool TryReadColor(JToken value, out Color color, out string errorMessage)
+        {
+            color = Color.clear;
+            if (!TryReadObject(value, "Color", out JObject obj, out errorMessage)) return false;
+            color = new Color(obj["r"]?.ToObject<float>() ?? 0f, obj["g"]?.ToObject<float>() ?? 0f, obj["b"]?.ToObject<float>() ?? 0f, obj["a"]?.ToObject<float>() ?? 1f);
+            return true;
+        }
+
+        private static bool TryReadRect(JToken value, out Rect rect, out string errorMessage)
+        {
+            rect = new Rect();
+            if (!TryReadObject(value, "Rect", out JObject obj, out errorMessage)) return false;
+            rect = new Rect(obj["x"]?.ToObject<float>() ?? 0f, obj["y"]?.ToObject<float>() ?? 0f, obj["width"]?.ToObject<float>() ?? 0f, obj["height"]?.ToObject<float>() ?? 0f);
+            return true;
+        }
+
+        private static bool TryReadBounds(JToken value, out Bounds bounds, out string errorMessage)
+        {
+            bounds = new Bounds(Vector3.zero, Vector3.one);
+            if (!TryReadObject(value, "Bounds", out JObject obj, out errorMessage)) return false;
+
+            Vector3 center = Vector3.zero;
+            Vector3 size = Vector3.one;
+            if (obj["center"] != null && !TryReadVector3(obj["center"], out center, out errorMessage)) return false;
+            if (obj["size"] != null && !TryReadVector3(obj["size"], out size, out errorMessage)) return false;
+
+            bounds = new Bounds(center, size);
+            return true;
+        }
+
+        private static bool TryReadVector2Int(JToken value, out Vector2Int vector, out string errorMessage)
+        {
+            vector = Vector2Int.zero;
+            if (!TryReadObject(value, "Vector2Int", out JObject obj, out errorMessage)) return false;
+            vector = new Vector2Int(obj["x"]?.ToObject<int>() ?? 0, obj["y"]?.ToObject<int>() ?? 0);
+            return true;
+        }
+
+        private static bool TryReadVector3Int(JToken value, out Vector3Int vector, out string errorMessage)
+        {
+            vector = Vector3Int.zero;
+            if (!TryReadObject(value, "Vector3Int", out JObject obj, out errorMessage)) return false;
+            vector = new Vector3Int(obj["x"]?.ToObject<int>() ?? 0, obj["y"]?.ToObject<int>() ?? 0, obj["z"]?.ToObject<int>() ?? 0);
+            return true;
+        }
+
+        private static bool TryReadRectInt(JToken value, out RectInt rect, out string errorMessage)
+        {
+            rect = new RectInt();
+            if (!TryReadObject(value, "RectInt", out JObject obj, out errorMessage)) return false;
+            rect = new RectInt(obj["x"]?.ToObject<int>() ?? 0, obj["y"]?.ToObject<int>() ?? 0, obj["width"]?.ToObject<int>() ?? 0, obj["height"]?.ToObject<int>() ?? 0);
+            return true;
+        }
+
+        private static bool TryReadBoundsInt(JToken value, out BoundsInt bounds, out string errorMessage)
+        {
+            bounds = new BoundsInt(Vector3Int.zero, Vector3Int.one);
+            if (!TryReadObject(value, "BoundsInt", out JObject obj, out errorMessage)) return false;
+
+            Vector3Int position = Vector3Int.zero;
+            Vector3Int size = Vector3Int.one;
+            if (obj["position"] != null && !TryReadVector3Int(obj["position"], out position, out errorMessage)) return false;
+            if (obj["size"] != null && !TryReadVector3Int(obj["size"], out size, out errorMessage)) return false;
+
+            bounds = new BoundsInt(position, size);
+            return true;
         }
     }
 }

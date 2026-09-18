@@ -183,7 +183,7 @@ namespace McpUnity.Tools
             {
                 ["name"] = go.name,
                 ["path"] = path,
-                ["instanceId"] = go.GetInstanceID(),
+                ["instanceId"] = UnityObjectId.GetObjectId(go),
                 ["active"] = go.activeSelf,
                 ["activeInHierarchy"] = go.activeInHierarchy,
                 ["childCount"] = go.transform.childCount,

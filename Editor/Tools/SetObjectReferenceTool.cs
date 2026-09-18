@@ -88,7 +88,7 @@ namespace McpUnity.Tools
             GameObject targetGO = null;
             if (targetInstanceId.HasValue)
             {
-                targetGO = EditorUtility.InstanceIDToObject(targetInstanceId.Value) as GameObject;
+                targetGO = UnityObjectId.ObjectFromId(targetInstanceId.Value) as GameObject;
             }
             else
             {
@@ -115,7 +115,7 @@ namespace McpUnity.Tools
             GameObject referenceGO = null;
             if (referenceInstanceId.HasValue)
             {
-                referenceGO = EditorUtility.InstanceIDToObject(referenceInstanceId.Value) as GameObject;
+                referenceGO = UnityObjectId.ObjectFromId(referenceInstanceId.Value) as GameObject;
             }
             else
             {

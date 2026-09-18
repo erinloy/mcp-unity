@@ -13,8 +13,8 @@ namespace McpUnity.Unity
     public class McpUnitySettings
     {
         // Constants
-        public const string ServerVersion = "1.1.2";
-        public const string PackageName = "com.gamelovers.mcp-unity";
+        public const string ServerVersion = "1.1.16";
+        public const string PackageName = "com.erinloy.mcp-unity";
         public const int RequestTimeoutMinimum = 10;
         
         // Paths
@@ -30,18 +30,21 @@ namespace McpUnity.Unity
         
         [Tooltip("Whether to automatically start the MCP server when Unity opens")]
         public bool AutoStartServer = true;
+
+        [Tooltip("Allow the MCP WebSocket server to run in Unity -batchmode. The C# MCP server build is still skipped in batch mode. This is disabled by default so CI and cloud builds keep the existing behavior.")]
+        public bool AllowBatchModeServer = false;
         
         [Tooltip("Whether to show info logs in the Unity console")]
-        public bool EnableInfoLogs = true;
-
-        [Tooltip("Optional: Full path to the npm executable (e.g., /Users/user/.asdf/shims/npm or C:\\path\\to\\npm.cmd). If not set, 'npm' from the system PATH will be used.")]
-        public string NpmExecutablePath = string.Empty;
+        public bool EnableInfoLogs = false;
         
         [Tooltip("Allow connections from remote MCP bridges. When disabled, only localhost connections are allowed (default).")]
         public bool AllowRemoteConnections = false;
         
         [Tooltip("Enable verbose logging of all MCP messages (including routine polling). Useful for debugging.")]
         public bool VerboseLogging = false;
+
+        [Tooltip("Allow MCP clients to install Unity packages. Disabled by default because installed packages can execute Editor code.")]
+        public bool AllowPackageInstallation = false;
 
         /// <summary>
         /// Singleton instance of settings
@@ -57,6 +60,12 @@ namespace McpUnity.Unity
                 return _instance;
             }
         }
+
+        /// <summary>
+        /// Returns whether a project settings file already exists without creating one.
+        /// This lets batch-mode CI keep its no-initialization behavior unless it has explicitly opted in.
+        /// </summary>
+        internal static bool HasPersistedSettings => File.Exists(SettingsPath);
 
         /// <summary>
         /// Private constructor for singleton
@@ -103,7 +112,7 @@ namespace McpUnity.Unity
         /// Save settings to disk
         /// </summary>
         /// <remarks>
-        /// WARNING: This file is also read by the MCP server. Changes here will require updates to it. See mcpUnity.ts
+        /// WARNING: This file is also read by the C# MCP server. Changes here will require updates to it. See Server~/Services/UnityBridgeService.cs
         /// </remarks>
         public void SaveSettings()
         {
